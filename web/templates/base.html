@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>{% block title %}{% endblock %} | Biometric Card Lab</title>
+<meta name="robots" content="noindex, nofollow">
 <meta name="description" content="Interactive demo of a biometric payment card with a dynamic CVV, push approval and fraud detection, running on Flask.">
 <link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,6 +12,7 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='lab.css') }}">
 </head>
 <body data-page="{{ active }}">
+<div class="proto" role="note"><b>PROTOTYPE</b> For demonstration only. This is not a real card, bank or payment service, and no real money moves. Never enter a real card number, password or personal details.</div>
 <div class="wrap">
   <header class="bar">
     <div class="brand">

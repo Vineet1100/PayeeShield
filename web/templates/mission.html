@@ -54,7 +54,8 @@
       <div class="lcd" id="lcd"><div class="big">TAP CARD</div><div>Corner Market terminal ready</div></div>
       {% elif m == 2 %}
       <div class="row">
-        <div class="field" style="flex:2 1 200px"><label for="coPan">CARD NUMBER</label><input class="input num" id="coPan" value="4111 1111 1111 1111" autocomplete="off"></div>
+        <div class="field" style="flex:2 1 200px"><label for="coPan">CARD NUMBER</label><input class="input num" id="coPan" value="4111 1111 1111 1111" autocomplete="off" readonly aria-describedby="panNote">
+          <small id="panNote" class="srv">Demo card only. Real card numbers are refused.</small></div>
         <div class="field" style="flex:1 1 90px"><label for="coCvv">CVV</label><input class="input num" id="coCvv" maxlength="3" inputmode="numeric" placeholder="123" autocomplete="off"></div>
         <div class="field" style="flex:1 1 110px"><label for="coAmt">TOTAL (CAD)</label><input class="input num" id="coAmt" type="number" min="0.01" step="0.01" value="249.99"></div>
       </div>

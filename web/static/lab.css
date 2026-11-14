@@ -272,3 +272,5 @@ input[type=range]{width:100%;accent-color:var(--holo)}
 .nf{padding:40px 24px;text-align:center}
 .nf h2{font:700 1.6rem/1.2 var(--f-display);margin:0 0 8px}
 .srv{font:500 .7rem/1 var(--f-mono);color:var(--muted)}
+.proto{position:sticky;top:0;z-index:50;background:#3a2a05;border-bottom:1px solid var(--gold);color:#ffe9b3;font:500 .82rem/1.4 var(--f-body,system-ui);padding:8px 16px;text-align:center}
+.proto b{font:700 .74rem/1 var(--f-mono);letter-spacing:.12em;color:var(--gold);margin-right:8px}

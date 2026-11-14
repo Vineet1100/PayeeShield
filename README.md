@@ -4,6 +4,8 @@ A Streamlit app that simulates a payment card that only works for its owner, plu
 
 I wanted to see how a few ideas from card security fit together in one place: biometric cards, dynamic CVVs, step-up authentication and transaction monitoring. So I built all three parties (card, merchants, bank) into a single app you can click through.
 
+> **Prototype for demonstration only.** This is not a real card, bank or payment service, no real money moves, and it must not be used to process real payments or store real card data. Don't enter a real card number, password or personal details into the demo.
+
 **Live demo: https://biometric-card-lab.onrender.com**
 
 It runs on the free plan, so if nobody has visited for 15 minutes the first load takes about a minute while the server wakes up.

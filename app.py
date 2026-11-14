@@ -1305,6 +1305,11 @@ def main() -> None:
     st.set_page_config(page_title="Nova card security lab", page_icon="💳", layout="wide")
     init_state()
     st.markdown(f"<style>{STYLE_PATH.read_text()}</style>", unsafe_allow_html=True)
+    st.warning(
+        "**Prototype for demonstration only.** This is not a real card, bank or payment service, and no real "
+        "money moves. Never enter a real card number, password or personal details.",
+        icon=":material/science:",
+    )
 
     # the monitor runs on every page so alerts pop up wherever you are
     alerts = run_fraud_monitor()

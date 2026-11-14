@@ -183,3 +183,18 @@ def test_session_store_evicts_least_recent():
     assert len(store) == 3
     assert store.get(ids[0])[0] == ids[0]
     assert store.get(ids[1])[0] != ids[1]      # the oldest unused one was dropped
+
+
+def test_every_page_says_it_is_a_prototype(client):
+    for path in ["/", "/mission/online", "/bank", "/how"]:
+        r = client.get(path)
+        html = r.get_data(as_text=True)
+        assert "PROTOTYPE" in html and "not a real card, bank or payment service" in html
+        assert r.headers["X-Robots-Tag"] == "noindex, nofollow"
+        assert 'name="robots" content="noindex, nofollow"' in html
+
+
+def test_real_card_numbers_are_refused(client):
+    r = client.post("/api/pay", json={"pan": "5500 0000 0000 0004", "cvv": "123", "amount": 10, "hour": 12}).get_json()
+    assert r["status"] == "invalid" and r["state"]["stats"]["attempts"] == 0
+    assert 'id="coPan" value="4111 1111 1111 1111" autocomplete="off" readonly' in client.get("/mission/online").get_data(as_text=True)

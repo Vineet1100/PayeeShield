@@ -77,6 +77,7 @@ def create_app(config: dict | None = None) -> Flask:
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("Referrer-Policy", "same-origin")
         resp.headers.setdefault("X-Frame-Options", "DENY")
+        resp.headers.setdefault("X-Robots-Tag", "noindex, nofollow")   # a prototype, not a service to be found
         return resp
 
     def page(template: str, active: str, **kw):
