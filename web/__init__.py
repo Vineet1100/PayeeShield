@@ -13,9 +13,13 @@ from __future__ import annotations
 
 import os
 import secrets
+import threading
+import time
+from collections import defaultdict, deque
 from datetime import timedelta
 
 from flask import Flask, abort, g, jsonify, redirect, render_template, request, session, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from bank import fraud
 
@@ -23,6 +27,33 @@ from .content import BRIEF, FLOW, MISSIONS
 from .lab import CARD_PAN, SessionStore
 
 ROUTE_TO_MISSION = {m["route"]: n for n, m in MISSIONS.items()}
+
+CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+       "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; "
+       "base-uri 'none'; form-action 'self'; object-src 'none'")
+
+
+class RateLimiter:
+    """At most ``limit`` requests per ``window`` seconds from one address (in memory, per process)."""
+
+    def __init__(self, limit: int, window: float):
+        self.limit, self.window = limit, window
+        self.hits: dict[str, deque] = defaultdict(deque)
+        self.lock = threading.Lock()
+
+    def allow(self, key: str) -> bool:
+        now = time.monotonic()
+        with self.lock:
+            q = self.hits[key]
+            while q and now - q[0] > self.window:
+                q.popleft()
+            if len(q) >= self.limit:
+                return False
+            q.append(now)
+            if len(self.hits) > 20_000:            # forget idle addresses
+                for k in [k for k, v in self.hits.items() if not v or now - v[-1] > self.window][:10_000]:
+                    del self.hits[k]
+            return True
 
 
 def _hour() -> int:
@@ -57,14 +88,20 @@ def create_app(config: dict | None = None) -> Flask:
         PERMANENT_SESSION_LIFETIME=timedelta(hours=2),
         MAX_CONTENT_LENGTH=16 * 1024,
         LABS=SessionStore(),
+        RATE_LIMIT=(120, 60.0),     # requests per minute per address; the page itself uses about 30
     )
     if config:
         app.config.update(config)
+    if "RENDER" in os.environ:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)   # real visitor address behind Render's proxy
+    limiter = RateLimiter(*app.config["RATE_LIMIT"])
 
     @app.before_request
     def load_lab():
         if request.endpoint in ("static", "healthz"):
             return
+        if not limiter.allow(request.remote_addr or "unknown"):
+            return jsonify(error="Too many requests. Slow down and try again in a minute."), 429
         if request.method == "POST" and not request.is_json:
             abort(415)       # JSON only, which also stops plain cross-site form posts
         sid, lab = app.config["LABS"].get(session.get("sid"))
@@ -78,6 +115,14 @@ def create_app(config: dict | None = None) -> Flask:
         resp.headers.setdefault("Referrer-Policy", "same-origin")
         resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("X-Robots-Tag", "noindex, nofollow")   # a prototype, not a service to be found
+        resp.headers.setdefault("Content-Security-Policy", CSP)
+        resp.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), "
+                                "publickey-credentials-get=(self), publickey-credentials-create=(self)")
+        resp.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
+        if request.is_secure:
+            resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+        if request.path.startswith("/api/"):
+            resp.headers.setdefault("Cache-Control", "no-store")
         return resp
 
     def page(template: str, active: str, **kw):

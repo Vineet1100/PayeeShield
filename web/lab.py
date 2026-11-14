@@ -32,6 +32,8 @@ CVV_STEP_SECONDS, CVV_DIGITS = 120, 3
 CVV_MAX_FAILURES, CVV_LOCK_SECONDS = 3, 60
 STALE_LOOKBACK_STEPS = 4
 PUSH_SECONDS = 60
+MAX_LEDGER = 300            # payment attempts kept per visitor; older ones are dropped
+MAX_ALERTS = 100
 BURST_SECONDS, BURST_COUNT = 5 * 60, 3
 
 CARD_PAN = "4111111111111111"
@@ -118,6 +120,10 @@ class CardLab:
     def _record(self, channel: str, amount: float, ok: bool, reason: str, hour: int, block: bool = False) -> Entry:
         e = Entry(t=self.clock(), channel=channel, amount=round(float(amount), 2), ok=ok, reason=reason, block=block, hour=hour)
         self.ledger.append(e)
+        if len(self.ledger) > MAX_LEDGER:
+            self.ledger = self.ledger[-MAX_LEDGER:]
+            self._alert_keys.clear()       # indexes shifted; keep current alerts, rebuild keys below
+            self._alert_keys.update(a.key for a in self.alerts)
         self._monitor()
         return e
 
@@ -246,6 +252,7 @@ class CardLab:
                 self._alert_keys.add(a.key)
                 a.t = self.clock()
                 self.alerts.insert(0, a)
+        del self.alerts[MAX_ALERTS:]
 
     # ------------------------------------------------------------------ what the page shows
     def stats(self) -> dict:

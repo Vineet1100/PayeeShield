@@ -198,3 +198,25 @@ def test_real_card_numbers_are_refused(client):
     r = client.post("/api/pay", json={"pan": "5500 0000 0000 0004", "cvv": "123", "amount": 10, "hour": 12}).get_json()
     assert r["status"] == "invalid" and r["state"]["stats"]["attempts"] == 0
     assert 'id="coPan" value="4111 1111 1111 1111" autocomplete="off" readonly' in client.get("/mission/online").get_data(as_text=True)
+
+
+def test_security_headers_lock_the_page_down(client):
+    h = client.get("/").headers
+    assert "script-src 'self'" in h["Content-Security-Policy"] and "frame-ancestors 'none'" in h["Content-Security-Policy"]
+    assert "camera=()" in h["Permissions-Policy"]
+    assert client.get("/api/state").headers["Cache-Control"] == "no-store"
+    assert "<script>" not in client.get("/").get_data(as_text=True)    # no inline scripts for the CSP to allow
+
+
+def test_one_visitor_cannot_flood_the_server():
+    app = create_app({"TESTING": True, "SECRET_KEY": "test", "RATE_LIMIT": (5, 60.0)})
+    c = app.test_client()
+    codes = [c.post("/api/tap", json={"amount": 1, "hour": 12}).status_code for _ in range(7)]
+    assert codes[:5] == [200] * 5 and codes[5:] == [429, 429]
+
+
+def test_a_visitor_log_has_a_size_limit(lab):
+    from web.lab import MAX_ALERTS, MAX_LEDGER
+    for _ in range(MAX_LEDGER + 50):
+        lab.tap(5, 12)
+    assert len(lab.ledger) == MAX_LEDGER and len(lab.alerts) <= MAX_ALERTS

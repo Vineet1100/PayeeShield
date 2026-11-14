@@ -138,6 +138,12 @@ tests/                   attack and payment-flow tests
 SYSTEM_DESIGN.md         architecture and threat model
 ```
 
+## Disclaimer
+
+This is a student prototype built to demonstrate card-security and fraud-detection ideas. It is not a real card, bank or payment service, and it is not affiliated with any bank or card network; "NOVA BANK", the cardholder and the card number are fictional (4111 1111 1111 1111 is a standard test number). It must not be used to process real payments, store real card data or collect anyone's personal information. The software is provided "as is", without warranty of any kind, as set out in the [MIT License](LICENSE). If you build on it, you are responsible for how you use it.
+
+The live demo is hardened for a public demo: every page shows a prototype banner and is hidden from search engines, real card numbers are refused, each visitor's data stays in memory for 2 hours and is never written to disk, requests are rate limited, and the server sends a strict Content Security Policy and other security headers.
+
 ## Limitations
 
 It's a prototype, so a few things are simplified:

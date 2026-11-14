@@ -20,7 +20,7 @@
   }
   let S = null, gotAt = 0;              // last state from the server and when it arrived
   const since = () => (performance.now() - gotAt) / 1000;
-  let seenAlerts = window.LAB.seenAlerts;
+  let seenAlerts = +document.body.dataset.seenAlerts || 0;
   function setState(st) {
     S = st; gotAt = performance.now();
     if (st.alerts.length > seenAlerts) st.alerts.slice(0, st.alerts.length - seenAlerts).reverse().forEach((a) => toast(a.title));
@@ -51,7 +51,7 @@
     t.className = "toast"; t.innerHTML = "<small>FRAUD ALERT</small><div></div>";
     t.querySelector("div").textContent = text;
     t.title = "Open the bank server";
-    t.onclick = () => { location.href = window.LAB.bank; };
+    t.onclick = () => { location.href = document.body.dataset.bankUrl; };
     $("toasts").prepend(t);
     setTimeout(() => t.remove(), 5200);
   }

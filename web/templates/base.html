@@ -11,7 +11,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=Barlow:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="{{ url_for('static', filename='lab.css') }}">
 </head>
-<body data-page="{{ active }}">
+<body data-page="{{ active }}" data-bank-url="{{ url_for('bank_page') }}" data-seen-alerts="{{ alerts|length }}">
 <div class="proto" role="note"><b>PROTOTYPE</b> For demonstration only. This is not a real card, bank or payment service, and no real money moves. Never enter a real card number, password or personal details.</div>
 <div class="wrap">
   <header class="bar">
@@ -47,7 +47,6 @@
   </main>
 </div>
 <div class="toasts" id="toasts" aria-live="assertive"></div>
-<script>window.LAB = {bank: "{{ url_for('bank_page') }}", seenAlerts: {{ alerts|length }}};</script>
 <script src="{{ url_for('static', filename='lab.js') }}" defer></script>
 </body>
 </html>
