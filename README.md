@@ -4,7 +4,9 @@ A Streamlit app that simulates a payment card that only works for its owner, plu
 
 I wanted to see how a few ideas from card security fit together in one place: biometric cards, dynamic CVVs, step-up authentication and transaction monitoring. So I built all three parties (card, merchants, bank) into a single app you can click through.
 
-**Live demo:** runs on Flask, hosted on Render (see [Hosting the demo](#hosting-the-demo) to put it online).
+**Live demo: https://biometric-card-lab.onrender.com**
+
+It runs on the free plan, so if nobody has visited for 15 minutes the first load takes about a minute while the server wakes up.
 
 The demo is a Flask app (`web/`) with a page for each mission (pay in store, pay online, attack the card, fraud AI), plus a home page that tracks your progress, a bank server page with the log and alerts, and a how-it-works page. Every rule runs in Python on the server: the fingerprint unlock window, the TOTP codes, the approvals, the attacks, the fraud monitor and the scikit-learn model. Each visitor gets their own card and bank, kept for 2 hours. The page itself only draws the card, runs the hold-to-scan animation and asks the server what happened. On a Mac it asks for your real fingerprint through Touch ID (using a passkey) and sends purchase approvals as a notification on your laptop. On devices without Touch ID the sensor is simulated.
 
@@ -113,13 +115,14 @@ If something goes wrong:
 | "Access to 127.0.0.1 was denied" (HTTP 403) | You opened port 5000, which macOS uses for AirPlay Receiver | Open http://127.0.0.1:8000 instead |
 | `Address already in use` | The app (or something else) is already running on port 8000 | Stop the other one with Ctrl+C, or run `PORT=8001 python3 -m web` and open port 8001 |
 
-To put it online for free on [Render](https://render.com):
+It is hosted on [Render](https://render.com) from `render.yaml`, at https://biometric-card-lab.onrender.com. To set it up again from scratch:
 
-1. Sign in to Render with your GitHub account.
-2. Click **New**, then **Blueprint**, and pick this repository. Render reads `render.yaml` and sets everything up, including a random `SECRET_KEY`.
-3. When the deploy finishes, your link is shown at the top, something like `https://biometric-card-lab.onrender.com`. Put it in the Live demo line at the top of this README.
+1. Sign in to Render, click **New**, then **Blueprint**.
+2. Paste `https://github.com/Vineet1100/biometric-card-fraud-analytics` under **Public Git Repository** and click **Continue**, then **Deploy Blueprint**. Render reads `render.yaml` and sets everything up, including a random `SECRET_KEY`.
 
-Every push to `main` redeploys it. On the free plan the app goes to sleep after 15 minutes without visitors, so the first visit after that takes about a minute to load. It must run as one worker process (as `render.yaml` does), because each visitor's card and bank live in that process's memory.
+To publish new changes after pushing to GitHub, open the service in Render and click **Manual Deploy**, then **Deploy latest commit**. To have every push deploy by itself instead, connect your GitHub account in Render (**Account settings**, then **Git providers**).
+
+On the free plan the app goes to sleep after 15 minutes without visitors, so the first visit after that takes about a minute to load. It must run as one worker process (as `render.yaml` does), because each visitor's card and bank live in that process's memory.
 
 ## Project structure
 
