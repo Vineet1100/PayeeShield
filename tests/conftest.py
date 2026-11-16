@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from bank.api import create_app
 from bank.client import BankClient
 from bank.config import Client, Settings
+from bank.cvv import DynamicCVV
 from bank.security import sign_request
 
 SCOPES = {
@@ -66,7 +67,7 @@ def clients(settings, http):
 
 @pytest.fixture
 def cvv(settings):
-    return pyotp.TOTP(settings.card_otp_secret, digits=3, interval=settings.cvv_step_seconds).now()
+    return DynamicCVV(settings.card_otp_secret, digits=3, interval=settings.cvv_step_seconds).now()
 
 
 def signed(http, settings, client_id, method, path, payload=None, **tweaks):

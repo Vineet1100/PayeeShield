@@ -6,6 +6,7 @@ import pyotp
 import pytest
 
 from bank.client import BankError
+from bank.cvv import DynamicCVV
 from bank.security import approval_signature, card_cryptogram
 
 PAN = "4111111111111111"
@@ -105,7 +106,7 @@ def test_cvv_works_only_once(clients, cvv):
 
 
 def test_stolen_cvv_is_declined_and_flagged(clients, settings):
-    totp = pyotp.TOTP(settings.card_otp_secret, digits=3, interval=settings.cvv_step_seconds)
+    totp = DynamicCVV(settings.card_otp_secret, digits=3, interval=settings.cvv_step_seconds)
     old = totp.at(time.time() - 2 * settings.cvv_step_seconds)
     if old == totp.now():  # 1 in 1000 chance the old code equals the new one
         return

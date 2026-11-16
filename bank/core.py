@@ -16,6 +16,7 @@ from decimal import Decimal
 import pyotp
 
 from . import fraud
+from .cvv import DynamicCVV
 from .config import Settings
 from .security import approval_signature, card_cryptogram, tokenize
 
@@ -87,8 +88,8 @@ class Bank:
         self._monitor(len(self.ledger) - 1)
         return tx
 
-    def _totp(self) -> pyotp.TOTP:
-        return pyotp.TOTP(
+    def _totp(self) -> DynamicCVV:
+        return DynamicCVV(
             self.settings.card_otp_secret, digits=3, interval=self.settings.cvv_step_seconds
         )
 

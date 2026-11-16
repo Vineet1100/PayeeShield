@@ -39,6 +39,8 @@ import pandas as pd
 import pyotp
 import streamlit as st
 
+from bank.cvv import DynamicCVV
+
 # optional - the app still runs without these, it just skips the ML model / chart
 try:
     from sklearn.neighbors import LocalOutlierFactor
@@ -286,9 +288,9 @@ def init_state() -> None:
 
 
 # --- Card side: Match-on-Card biometrics and the e-ink CVV ---
-def card_totp() -> pyotp.TOTP:
+def card_totp() -> DynamicCVV:
     # CVV = truncate(HMAC-SHA1(secret, unix_time // step)) mod 10^3  (RFC 6238)
-    return pyotp.TOTP(st.session_state.card_secret, digits=CVV_DIGITS, interval=CVV_STEP_SECONDS)
+    return DynamicCVV(st.session_state.card_secret, digits=CVV_DIGITS, interval=CVV_STEP_SECONDS)
 
 
 def unlock_remaining() -> float:
@@ -477,7 +479,7 @@ def authorize_online(pan_input: str, cvv_input: str, amount: float) -> dict:
     if not (cvv.isdigit() and len(cvv) == CVV_DIGITS):
         return record("Online", amount, pan, False, f"CVV must be {CVV_DIGITS} digits")
 
-    bank_totp = pyotp.TOTP(ss.bank_secret, digits=CVV_DIGITS, interval=CVV_STEP_SECONDS)
+    bank_totp = DynamicCVV(ss.bank_secret, digits=CVV_DIGITS, interval=CVV_STEP_SECONDS)
     now = time.time()
     current_step = int(now // CVV_STEP_SECONDS)
 
@@ -1233,7 +1235,7 @@ def transaction_log() -> None:
             f"{MERCHANT_NAME} to start the log.</div>"
         )
     with st.expander("Bank internals (a real bank never shows these)"):
-        bank_totp = pyotp.TOTP(ss.bank_secret, digits=CVV_DIGITS, interval=CVV_STEP_SECONDS)
+        bank_totp = DynamicCVV(ss.bank_secret, digits=CVV_DIGITS, interval=CVV_STEP_SECONDS)
         now = time.time()
         st.write(
             {

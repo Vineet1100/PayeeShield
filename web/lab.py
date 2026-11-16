@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 import pyotp
 
 from bank import fraud
+from bank.cvv import DynamicCVV
 
 UNLOCK_SECONDS = 15
 BIO_MAX_FAILURES, BIO_LOCK_SECONDS = 3, 30
@@ -77,7 +78,7 @@ class Pending:
 class CardLab:
     def __init__(self, clock=time.time):
         self.clock = clock
-        self.totp = pyotp.TOTP(pyotp.random_base32(), digits=CVV_DIGITS, interval=CVV_STEP_SECONDS)
+        self.totp = DynamicCVV(pyotp.random_base32(), digits=CVV_DIGITS, interval=CVV_STEP_SECONDS)
         self.unlocked_until = 0.0
         self.bio_fails = 0
         self.bio_locked_until = 0.0
