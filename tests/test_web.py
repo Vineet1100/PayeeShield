@@ -1,4 +1,5 @@
 """The Flask card lab: pages, the JSON API, and the card and bank rules behind it."""
+
 import pytest
 
 from web import create_app
@@ -25,7 +26,18 @@ def lab():
 
 
 # ------------------------------------------------------------------ pages
-@pytest.mark.parametrize("path", ["/", "/mission/store", "/mission/online", "/mission/attack", "/mission/fraud-ai", "/bank", "/how"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/",
+        "/mission/store",
+        "/mission/online",
+        "/mission/attack",
+        "/mission/fraud-ai",
+        "/bank",
+        "/how",
+    ],
+)
 def test_every_page_renders(client, path):
     r = client.get(path)
     assert r.status_code == 200
@@ -63,7 +75,9 @@ def test_api_only_accepts_json(client):
     assert client.post("/api/tap", data={"amount": "5"}).status_code == 415
 
 
-@pytest.mark.parametrize("body", [{"amount": -1, "hour": 12}, {"amount": "x", "hour": 12}, {"amount": 5, "hour": 24}])
+@pytest.mark.parametrize(
+    "body", [{"amount": -1, "hour": 12}, {"amount": "x", "hour": 12}, {"amount": 5, "hour": 24}]
+)
 def test_bad_input_is_rejected(client, body):
     assert client.post("/api/tap", json=body).status_code == 400
 
@@ -74,19 +88,28 @@ def test_full_visit_through_the_api(client):
     assert len(st["cvv"]) == 3 and st["stats"]["attempts"] == 0
 
     # mission 01: locked tap, scan, tap
-    assert client.post("/api/tap", json={"amount": 42.5, "hour": 12}).get_json()["entry"]["ok"] is False
-    assert client.post("/api/scan", json={"finger": "owner"}).get_json()["result"]["result"] == "match"
+    assert (
+        client.post("/api/tap", json={"amount": 42.5, "hour": 12}).get_json()["entry"]["ok"]
+        is False
+    )
+    assert (
+        client.post("/api/scan", json={"finger": "owner"}).get_json()["result"]["result"] == "match"
+    )
     r = client.post("/api/tap", json={"amount": 42.5, "hour": 12}).get_json()
     assert r["entry"]["ok"] is True and 1 in r["state"]["done"]
 
     # mission 02: pay with the card's current code, then approve
     cvv = client.get("/api/state").get_json()["cvv"]
-    r = client.post("/api/pay", json={"pan": "4111 1111 1111 1111", "cvv": cvv, "amount": 249.99, "hour": 12}).get_json()
+    r = client.post(
+        "/api/pay", json={"pan": "4111 1111 1111 1111", "cvv": cvv, "amount": 249.99, "hour": 12}
+    ).get_json()
     assert r["status"] == "pending" and r["state"]["pending"]["amount"] == 249.99
     r = client.post("/api/approve", json={"decision": "approve"}).get_json()
     assert r["entry"]["ok"] is True and 2 in r["state"]["done"]
     # the same code can't be used twice
-    r = client.post("/api/pay", json={"pan": "4111111111111111", "cvv": cvv, "amount": 10, "hour": 12}).get_json()
+    r = client.post(
+        "/api/pay", json={"pan": "4111111111111111", "cvv": cvv, "amount": 10, "hour": 12}
+    ).get_json()
     assert r["status"] == "declined" and "already used" in r["entry"]["reason"]
 
     # mission 03: attacks raise alerts
@@ -95,10 +118,14 @@ def test_full_visit_through_the_api(client):
     r = client.post("/api/attack/testing", json={"hour": 12}).get_json()
     assert [e["ok"] for e in r["entries"]] == [False, False, False]
     titles = [a["title"] for a in r["state"]["alerts"]]
-    assert any("Stolen card data" in t for t in titles) and any("3 blocked in-store" in t for t in titles)
+    assert any("Stolen card data" in t for t in titles) and any(
+        "3 blocked in-store" in t for t in titles
+    )
 
     # mission 04: the 3 AM lunch is caught by the model
-    j = client.post("/api/judge", json={"amount": 42.5, "at_hour": 3, "online": False, "preset": True}).get_json()
+    j = client.post(
+        "/api/judge", json={"amount": 42.5, "at_hour": 3, "online": False, "preset": True}
+    ).get_json()
     assert j["flagged"] and j["pattern"] and not j["outlier"] and 4 in j["done"]
 
     # the pages show what happened
@@ -140,7 +167,7 @@ def test_code_changes_every_two_minutes_and_old_code_is_leaked_data(lab):
     old = lab.cvv_now()
     lab.clock.t += 240
     res = lab.pay_online("4111111111111111", old, 50, 12)
-    if old == lab.cvv_now():          # 1 in 1000 chance the new code matches the old one
+    if old == lab.cvv_now():  # 1 in 1000 chance the new code matches the old one
         pytest.skip("codes collided")
     assert res["status"] == "declined" and res["stale"]
 
@@ -178,11 +205,11 @@ def test_large_approved_purchase_is_flagged(lab):
 def test_session_store_evicts_least_recent():
     store = SessionStore(max_sessions=3)
     ids = [store.get(None)[0] for _ in range(3)]
-    store.get(ids[0])                 # touch the first so it is the most recent
+    store.get(ids[0])  # touch the first so it is the most recent
     store.get(None)
     assert len(store) == 3
     assert store.get(ids[0])[0] == ids[0]
-    assert store.get(ids[1])[0] != ids[1]      # the oldest unused one was dropped
+    assert store.get(ids[1])[0] != ids[1]  # the oldest unused one was dropped
 
 
 def test_every_page_says_it_is_a_prototype(client):
@@ -195,17 +222,26 @@ def test_every_page_says_it_is_a_prototype(client):
 
 
 def test_real_card_numbers_are_refused(client):
-    r = client.post("/api/pay", json={"pan": "5500 0000 0000 0004", "cvv": "123", "amount": 10, "hour": 12}).get_json()
+    r = client.post(
+        "/api/pay", json={"pan": "5500 0000 0000 0004", "cvv": "123", "amount": 10, "hour": 12}
+    ).get_json()
     assert r["status"] == "invalid" and r["state"]["stats"]["attempts"] == 0
-    assert 'id="coPan" value="4111 1111 1111 1111" autocomplete="off" readonly' in client.get("/mission/online").get_data(as_text=True)
+    assert 'id="coPan" value="4111 1111 1111 1111" autocomplete="off" readonly' in client.get(
+        "/mission/online"
+    ).get_data(as_text=True)
 
 
 def test_security_headers_lock_the_page_down(client):
     h = client.get("/").headers
-    assert "script-src 'self'" in h["Content-Security-Policy"] and "frame-ancestors 'none'" in h["Content-Security-Policy"]
+    assert (
+        "script-src 'self'" in h["Content-Security-Policy"]
+        and "frame-ancestors 'none'" in h["Content-Security-Policy"]
+    )
     assert "camera=()" in h["Permissions-Policy"]
     assert client.get("/api/state").headers["Cache-Control"] == "no-store"
-    assert "<script>" not in client.get("/").get_data(as_text=True)    # no inline scripts for the CSP to allow
+    assert "<script>" not in client.get("/").get_data(
+        as_text=True
+    )  # no inline scripts for the CSP to allow
 
 
 def test_one_visitor_cannot_flood_the_server():
@@ -217,6 +253,7 @@ def test_one_visitor_cannot_flood_the_server():
 
 def test_a_visitor_log_has_a_size_limit(lab):
     from web.lab import MAX_ALERTS, MAX_LEDGER
+
     for _ in range(MAX_LEDGER + 50):
         lab.tap(5, 12)
     assert len(lab.ledger) == MAX_LEDGER and len(lab.alerts) <= MAX_ALERTS

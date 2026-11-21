@@ -11,7 +11,7 @@ SIGNATURE_HEADERS = ("X-Client-Id", "X-Timestamp", "X-Nonce", "X-Signature")
 
 def canonical_request(method: str, path: str, timestamp: str, nonce: str, body: bytes) -> bytes:
     body_hash = hashlib.sha256(body).hexdigest()
-    return "\n".join([method.upper(), path, timestamp, nonce, body_hash]).encode()
+    return f"{method.upper()}\n{path}\n{timestamp}\n{nonce}\n{body_hash}".encode()
 
 
 def sign_request(

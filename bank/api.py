@@ -268,7 +268,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/v1/alerts")
     async def alerts(request: Request, limit: int = Query(20, ge=1, le=100)):
         await authenticate(request, "alerts:read")
-        return {"alerts": list(reversed(bank.alerts))[:limit]}
+        return {"alerts": bank.alerts(limit)}
 
     @app.get("/v1/stats")
     async def stats(request: Request):

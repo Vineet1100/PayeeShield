@@ -5,6 +5,7 @@ modulo 10**digits, so the last 3 digits of the 6-digit code are exactly the 3-di
 code: ``(n % 10**6) % 10**3 == n % 10**3``. The codes are the same as before, and this
 works on every pyotp version.
 """
+
 from __future__ import annotations
 
 import datetime as dt
@@ -24,10 +25,10 @@ class DynamicCVV:
         self.interval = interval
         self._totp = pyotp.TOTP(secret, digits=_FULL_DIGITS, interval=interval)
 
-    def at(self, for_time: int | float | dt.datetime, counter_offset: int = 0) -> str:
+    def at(self, for_time: float | dt.datetime, counter_offset: int = 0) -> str:
         """The code for a moment in time (unix seconds or a datetime)."""
-        return self._totp.at(for_time, counter_offset=counter_offset)[-self.digits:]
+        return self._totp.at(for_time, counter_offset=counter_offset)[-self.digits :]
 
     def now(self) -> str:
         """The code shown on the card right now."""
-        return self._totp.now()[-self.digits:]
+        return self._totp.now()[-self.digits :]

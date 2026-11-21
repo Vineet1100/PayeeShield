@@ -1,4 +1,5 @@
 """The 3-digit dynamic CVV must match the RFC 6238 maths exactly, on any pyotp version."""
+
 import base64
 import hashlib
 import hmac
@@ -15,8 +16,8 @@ def rfc6238(secret: str, for_time: float, interval: int, digits: int) -> str:
     counter = int(for_time // interval)
     mac = hmac.new(base64.b32decode(secret), struct.pack(">Q", counter), hashlib.sha1).digest()
     off = mac[-1] & 0x0F
-    code = struct.unpack(">I", mac[off:off + 4])[0] & 0x7FFFFFFF
-    return str(code % 10 ** digits).zfill(digits)
+    code = struct.unpack(">I", mac[off : off + 4])[0] & 0x7FFFFFFF
+    return str(code % 10**digits).zfill(digits)
 
 
 @pytest.mark.parametrize("t", [0, 59, 1_800_000_000, 1_800_000_119, 1_800_000_120, 2_000_000_000.5])
@@ -35,6 +36,7 @@ def test_codes_are_three_digits_with_leading_zeros_kept():
 
 def test_code_changes_each_window_and_now_matches_at():
     import time
+
     cvv = DynamicCVV(pyotp.random_base32(), digits=3, interval=120)
     assert cvv.now() in {cvv.at(time.time()), cvv.at(time.time() - 1)}
 

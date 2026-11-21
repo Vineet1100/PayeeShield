@@ -15,3 +15,7 @@ audit.log
 audit_log.csv
 
 .DS_Store
+
+# local SQLite ledger
+*.db
+*.db-journal

@@ -23,6 +23,7 @@ flowchart LR
         ENG[Authorization engine]
         MON[Fraud monitor<br/>z-score + LOF]
         LOG[(Audit log<br/>tokenized, 0600)]
+        DB[(SQLite ledger<br/>transactions + alerts, 0600)]
     end
     KEYS[(Keys from environment<br/>HSM / KMS in production)]
     MCP[MCP server<br/>scope: fraud:score, alerts:read, stats:read]
@@ -35,6 +36,8 @@ flowchart LR
     APP -- signed approval --> AUTH
     AUTH --> ENG --> MON
     ENG --> LOG
+    ENG --> DB
+    MON --> DB
     KEYS -.-> ENG
     AGENT -- stdio --> MCP -- signed HTTPS --> AUTH
 ```
@@ -45,7 +48,8 @@ flowchart LR
 | Terminals and checkouts | API clients | Nothing secret about the card. They only see response codes. |
 | Cardholder's device | `approval_signature()` | Device key. Signs "approve" or "deny" after a Touch ID check. |
 | Bank API | `bank/api.py`, `bank/core.py` | Every decision. The only component that holds all keys. |
-| Fraud monitor | `bank/fraud.py`, `Bank._monitor()` | Read access to the ledger. |
+| Fraud monitor | `bank/fraud.py`, `Bank._monitor()` | Reads the ledger and writes alerts to it. |
+| Ledger | `bank/ledger.py`, `queries/` | Transactions and alerts, with tokenized card numbers only. Amounts in integer cents. |
 | MCP server | `mcp_server/server.py` | Read-only fraud credentials. Cannot move money. |
 
 ## Trust boundaries
@@ -113,11 +117,12 @@ Using STRIDE. Every row has a test in `tests/`.
 | **Tampering** | Terminal or proxy changes the amount | Body hash in the signature; amount inside the cryptogram | `test_tampered_body_is_rejected`, `test_terminal_cannot_change_the_amount` |
 | **Replay** | Resending a captured request, cryptogram, CVV or approval | Nonces, timestamps, card counter, one-time CVV and approval ids | `test_replayed_request_is_rejected`, `test_replayed_cryptogram_is_declined`, `test_cvv_works_only_once`, `test_approval_works_only_once` |
 | **Repudiation** | "I never made that payment" | Append-only audit log of every decision and failed login | `test_audit_log_has_no_card_data` |
-| **Information disclosure** | Card data leaking through logs, errors or the AI agent | Tokenized card numbers, no CVVs in logs, generic errors, docs off in production, owner-only log file | `test_audit_log_has_no_card_data`, `test_errors_and_headers_reveal_nothing`, `test_output_never_contains_card_numbers` |
+| **Information disclosure** | Card data leaking through logs, errors or the AI agent | Tokenized card numbers, no CVVs in logs, generic errors, docs off in production, owner-only log and ledger files | `test_audit_log_has_no_card_data`, `test_ledger_stores_no_card_numbers`, `test_ledger_file_is_private_and_survives_a_restart`, `test_errors_and_headers_reveal_nothing`, `test_output_never_contains_card_numbers` |
 | **Denial of service** | Flooding the API or brute-forcing signatures | Per-client rate limit, lockout after 20 failed signatures per address, 16 KB body limit | `test_rate_limit`, `test_repeated_bad_signatures_lock_out_the_source`, `test_oversized_body_is_rejected` |
 | **Elevation of privilege** | MCP server or a terminal calling endpoints outside its job | Scopes per client, MCP tools read-only | `test_client_cannot_use_another_clients_scope`, `test_server_with_payment_credentials_gets_nothing` |
 | **Brute force** | Guessing the 3-digit CVV | 3 attempts, then a 60-second pause | `test_guessing_cvvs_pauses_online_payments` |
 | **Injection** | Malformed or extra JSON fields, script in a merchant id | Strict Pydantic models, unknown fields rejected, merchant ids limited to `[a-z0-9-]` | `test_bad_values_are_rejected`, `test_unexpected_fields_are_rejected` |
+| **SQL injection** | A merchant id or reason crafted to change a ledger query | Parameterized queries only; analytics limited to the fixed files in `queries/`; schema `CHECK` constraints reject impossible rows | `test_values_are_stored_as_data_not_sql`, `test_only_known_reports_can_run`, `test_schema_rejects_impossible_rows` |
 
 ## Key management
 
@@ -152,7 +157,7 @@ The MCP server is the most interesting part to secure, because whatever an AI ag
 - `python -m bank` binds to `127.0.0.1`. It refuses to listen on a network address unless TLS is configured (`BANK_TLS_CERT` and `BANK_TLS_KEY`) or `BANK_BEHIND_TLS_PROXY=1` confirms a TLS proxy sits in front.
 - No `Server` header, plus security headers on every response (`no-store`, `nosniff`, `DENY` framing, a strict CSP and HSTS).
 - API docs (`/docs`, `/openapi.json`) only exist when `BANK_ENV=dev`.
-- The audit log is created with owner-only permissions (`0600`).
+- The audit log and the ledger database are created with owner-only permissions (`0600`).
 
 ### CI checks (`.github/workflows/security.yml`)
 
@@ -174,7 +179,7 @@ No system is unbreakable, and this is a working prototype rather than a producti
 - **Real card cryptography.** EMV ARQC cryptograms with per-card keys derived from issuer master keys, instead of one HMAC key.
 - **WebAuthn verification.** Verify the device's public-key signature (passkey assertion) server-side, instead of a shared device key.
 - **Mutual TLS** between all services, on top of request signatures.
-- **Shared state.** Nonces, rate limits, approvals and the ledger in an encrypted database or Redis, so they survive restarts and work across several servers.
+- **Shared state.** The ledger already survives restarts in SQLite; a real bank would use an encrypted, replicated database, and keep nonces, rate limits and approvals in Redis so they work across several servers.
 - **PCI DSS compliance** for anything that stores or processes real card numbers.
 - **Monitoring.** Audit logs shipped to a tamper-evident store and a SIEM, with alerting on authentication failures.
 - **Independent testing.** Penetration tests and a security review before going live.

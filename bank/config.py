@@ -46,6 +46,7 @@ class Settings:
     requests_per_minute: int = 60
     max_body_bytes: int = 16_384
     audit_log_path: str = "audit.log"
+    ledger_path: str = ":memory:"
 
     def __repr__(self) -> str:  # never print keys by accident
         return f"Settings(env={self.env!r}, clients={sorted(self.clients)})"
@@ -91,4 +92,5 @@ def load_settings() -> Settings:
         token_key=_secret("BANK_TOKEN_KEY"),
         clients=_clients(os.environ.get("BANK_CLIENTS", "")),
         audit_log_path=os.environ.get("BANK_AUDIT_LOG", "audit.log"),
+        ledger_path=os.environ.get("BANK_LEDGER_DB", "ledger.db"),
     )

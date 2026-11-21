@@ -1,6 +1,7 @@
 import json
 import secrets
 import time
+from dataclasses import replace
 
 import pyotp
 import pytest
@@ -25,7 +26,7 @@ def make_settings(tmp_path, **overrides) -> Settings:
         cid: Client(cid, secrets.token_urlsafe(48).encode(), frozenset(scopes))
         for cid, scopes in SCOPES.items()
     }
-    values = dict(
+    settings = Settings(
         env="production",
         card_pan="4111111111111111",
         card_otp_secret=pyotp.random_base32(length=32),
@@ -34,9 +35,9 @@ def make_settings(tmp_path, **overrides) -> Settings:
         token_key=secrets.token_bytes(32),
         clients=clients,
         audit_log_path=str(tmp_path / "audit.log"),
+        ledger_path=str(tmp_path / "ledger.db"),
     )
-    values.update(overrides)
-    return Settings(**values)
+    return replace(settings, **overrides)
 
 
 @pytest.fixture

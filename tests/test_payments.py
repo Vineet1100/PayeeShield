@@ -2,7 +2,6 @@
 
 import time
 
-import pyotp
 import pytest
 
 from bank.client import BankError
@@ -145,3 +144,11 @@ def test_stats(clients, settings, cvv):
     tap(clients, settings)
     stats = clients["fraud-agent"].request("GET", "/v1/stats")
     assert stats["attempts"] == 1 and stats["approved"] == 1 and stats["approved_volume"] == "42.50"
+
+
+def test_ledger_stores_no_card_numbers(clients, settings):
+    tap(clients, settings)
+    tap(clients, settings, atc=2, key=b"x" * 32)
+    with open(settings.ledger_path, "rb") as f:
+        data = f.read()
+    assert PAN.encode() not in data and b"tok_" in data

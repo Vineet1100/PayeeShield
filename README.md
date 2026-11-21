@@ -66,6 +66,14 @@ set -a; source .env; set +a
 python -m bank                      # listens on 127.0.0.1:8080
 ```
 
+**Ledger and analytics SQL.** The bank keeps every payment attempt and fraud alert in a SQLite database (`ledger.db`, owner-only, set with `BANK_LEDGER_DB`). Amounts are stored as integer cents and every query is parameterized. `queries/` has the analytics as plain SQL you can run against it:
+
+```bash
+sqlite3 -header -column ledger.db < queries/approval_rate_by_channel.sql
+sqlite3 -header -column ledger.db < queries/blocked_by_reason.sql
+sqlite3 -header -column ledger.db < queries/hourly_volume.sql
+```
+
 **MCP server.** Gives an AI agent three read-only tools: `score_transaction`, `list_fraud_alerts` and `get_payment_stats`. It can't move money or see card numbers, and its credentials can't reach the payment endpoints even if the server is compromised. Add it to an MCP client (for example Claude Desktop) like this:
 
 ```json
@@ -132,7 +140,8 @@ On the free plan the app goes to sleep after 15 minutes without visitors, so the
 app.py, style.css        Streamlit app (card, merchants, bank in one process)
 web/                     Flask demo: pages, JSON API and per-visitor card and bank
 render.yaml              Render hosting setup
-bank/                    bank API: signing, authorization, fraud monitor, audit log
+bank/                    bank API: signing, authorization, fraud monitor, SQLite ledger, audit log
+queries/                 analytics SQL over the ledger
 mcp_server/              read-only MCP server for AI agents
 tests/                   attack and payment-flow tests
 SYSTEM_DESIGN.md         architecture and threat model

@@ -10,14 +10,12 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from decimal import Decimal
 
-import pyotp
-
 from . import fraud
-from .cvv import DynamicCVV
 from .config import Settings
+from .cvv import DynamicCVV
+from .ledger import Ledger
 from .security import approval_signature, card_cryptogram, tokenize
 
 APPROVED = "00"  # ISO 8583 style response codes
@@ -56,16 +54,18 @@ class Approval:
 @dataclass
 class Bank:
     settings: Settings
-    hour_now: Callable[[], int] = lambda: datetime.now().hour  # local hour, a fraud-model feature
-    ledger: list[Transaction] = field(default_factory=list)
-    alerts: list[dict] = field(default_factory=list)
-    _alerted: set[str] = field(default_factory=set)
+    # local hour, a fraud-model feature
+    hour_now: Callable[[], int] = lambda: time.localtime().tm_hour
+    ledger: Ledger = field(init=False)
     _approvals: dict[str, Approval] = field(default_factory=dict)
     _used_cvv_steps: set[int] = field(default_factory=set)
     _cvv_failures: int = 0
     _online_blocked_until: float = 0.0
     _last_atc: int = -1
     _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    def __post_init__(self):
+        self.ledger = Ledger(self.settings.ledger_path)
 
     # --- helpers
 
@@ -84,8 +84,7 @@ class Bank:
             security_block=block,
             hour=self.hour_now(),
         )
-        self.ledger.append(tx)
-        self._monitor(len(self.ledger) - 1)
+        self._monitor(self.ledger.add_transaction(tx), tx)
         return tx
 
     def _totp(self) -> DynamicCVV:
@@ -239,60 +238,30 @@ class Bank:
 
     # --- fraud monitor
 
-    def _alert(self, key: str, severity: str, title: str, tx: Transaction) -> None:
-        if key in self._alerted:
-            return
-        self._alerted.add(key)
-        self.alerts.append(
-            {
-                "at": datetime.fromtimestamp(tx.at, timezone.utc).isoformat(timespec="seconds"),
-                "severity": severity,
-                "title": title,
-                "channel": tx.channel,
-                "merchant_id": tx.merchant_id,
-                "amount": str(tx.amount),
-                "card_ref": tx.card_ref,
-            }
-        )
-
-    def _monitor(self, i: int) -> None:
-        tx = self.ledger[i]
+    def _monitor(self, tx_id: int, tx: Transaction) -> None:
         if tx.security_block:
-            recent = [
-                t
-                for t in self.ledger
-                if t.security_block
-                and t.channel == tx.channel
-                and tx.at - t.at <= BURST_WINDOW_SECONDS
-            ]
-            if len(recent) == BURST_THRESHOLD:
-                self._alert(
-                    f"burst-{i}",
-                    "high",
-                    f"{BURST_THRESHOLD} blocked {tx.channel} attempts in 5 minutes",
-                    tx,
-                )
+            recent = self.ledger.blocked_since(tx.channel, tx.at - BURST_WINDOW_SECONDS)
+            if recent == BURST_THRESHOLD:
+                title = f"{BURST_THRESHOLD} blocked {tx.channel} attempts in 5 minutes"
+                self.ledger.add_alert(tx_id, "high", title)
         if "expired CVV" in tx.reason:
-            self._alert(f"leak-{i}", "high", "stolen card data used online", tx)
+            self.ledger.add_alert(tx_id, "high", "stolen card data used online")
         if "denied" in tx.reason:
-            self._alert(f"deny-{i}", "high", "purchase denied by cardholder", tx)
+            self.ledger.add_alert(tx_id, "high", "purchase denied by cardholder")
         if tx.approved:
             result = fraud.score(float(tx.amount), tx.hour, tx.channel == "online")
             if result.flagged:
-                self._alert(f"score-{i}", "medium", f"unusual purchase: {result.reason}", tx)
+                self.ledger.add_alert(tx_id, "medium", f"unusual purchase: {result.reason}")
 
     def pending(self) -> list[Approval]:
         with self._lock:
             now = time.monotonic()
             return [a for a in self._approvals.values() if a.expires_at > now]
 
+    def alerts(self, limit: int) -> list[dict]:
+        with self._lock:
+            return self.ledger.alerts(limit)
+
     def stats(self) -> dict:
         with self._lock:
-            approved = [t for t in self.ledger if t.approved]
-            return {
-                "attempts": len(self.ledger),
-                "approved": len(approved),
-                "blocked": sum(t.security_block for t in self.ledger),
-                "alerts": len(self.alerts),
-                "approved_volume": str(sum((t.amount for t in approved), Decimal("0"))),
-            }
+            return self.ledger.stats()
