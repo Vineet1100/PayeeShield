@@ -74,7 +74,9 @@ sqlite3 -header -column ledger.db < queries/blocked_by_reason.sql
 sqlite3 -header -column ledger.db < queries/hourly_volume.sql
 ```
 
-**MCP server.** Gives an AI agent three read-only tools: `score_transaction`, `list_fraud_alerts` and `get_payment_stats`. It can't move money or see card numbers, and its credentials can't reach the payment endpoints even if the server is compromised. Add it to an MCP client (for example Claude Desktop) like this:
+The same reports are served as JSON from `GET /v1/reports/{name}` (for example `/v1/reports/hourly_volume`) to clients with the `stats:read` scope. Only the names of files in `queries/` are accepted, so a caller can't send SQL.
+
+**MCP server.** Gives an AI agent four read-only tools: `score_transaction`, `list_fraud_alerts`, `get_payment_stats` and `get_ledger_report` (the reports above). It can't move money or see card numbers, and its credentials can't reach the payment endpoints even if the server is compromised. Add it to an MCP client (for example Claude Desktop) like this:
 
 ```json
 {

@@ -11,6 +11,8 @@ from decimal import Decimal
 from pathlib import Path
 
 QUERIES_DIR = Path(__file__).resolve().parent.parent / "queries"
+# fixed at import, so a caller can only pick a name, never supply SQL or a path
+REPORTS = {p.stem: p.read_text() for p in sorted(QUERIES_DIR.glob("*.sql"))}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS transactions (
@@ -119,7 +121,6 @@ class Ledger:
 
     def report(self, name: str) -> list[dict]:
         """Run one of the analytics queries in queries/ by file name, without .sql."""
-        reports = {p.stem: p for p in QUERIES_DIR.glob("*.sql")}
-        if name not in reports:
-            raise ValueError(f"unknown report {name!r}; choose from {sorted(reports)}")
-        return [dict(r) for r in self._db.execute(reports[name].read_text())]
+        if name not in REPORTS:
+            raise ValueError(f"unknown report {name!r}; choose from {sorted(REPORTS)}")
+        return [dict(r) for r in self._db.execute(REPORTS[name])]

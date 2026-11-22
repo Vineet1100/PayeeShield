@@ -146,6 +146,16 @@ def test_stats(clients, settings, cvv):
     assert stats["attempts"] == 1 and stats["approved"] == 1 and stats["approved_volume"] == "42.50"
 
 
+def test_reports(clients, settings):
+    tap(clients, settings)
+    tap(clients, settings, atc=2, key=b"x" * 32)
+    report = clients["fraud-agent"].request("GET", "/v1/reports/approval_rate_by_channel")
+    assert report == {
+        "report": "approval_rate_by_channel",
+        "rows": [{"channel": "in_store", "attempts": 2, "approved": 1, "approval_rate_pct": 50.0}],
+    }
+
+
 def test_ledger_stores_no_card_numbers(clients, settings):
     tap(clients, settings)
     tap(clients, settings, atc=2, key=b"x" * 32)

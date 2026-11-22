@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from . import fraud
 from .config import Client, Settings, load_settings
 from .core import APPROVED, PENDING, Bank
+from .ledger import REPORTS
 from .security import SIGNATURE_HEADERS, NonceCache, RateLimiter, sign_request, signatures_match
 
 MONEY = {"gt": 0, "le": 10_000, "max_digits": 7, "decimal_places": 2}
@@ -274,5 +275,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def stats(request: Request):
         await authenticate(request, "stats:read")
         return bank.stats()
+
+    @app.get("/v1/reports/{name}")
+    async def report(name: str, request: Request):
+        await authenticate(request, "stats:read")
+        if name not in REPORTS:
+            raise HTTPException(404, "not found")
+        return {"report": name, "rows": bank.report(name)}
 
     return app

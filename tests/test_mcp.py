@@ -23,6 +23,7 @@ def test_every_tool_is_read_only(server):
         "score_transaction",
         "list_fraud_alerts",
         "get_payment_stats",
+        "get_ledger_report",
     }
     assert all(t.annotations.read_only_hint and not t.annotations.destructive_hint for t in tools)
 
@@ -39,6 +40,13 @@ def test_tools_reject_bad_input(server):
         run(server.call_tool("score_transaction", {"amount": "-5", "hour": 99, "channel": "atm"}))
     with pytest.raises(ToolError):
         run(server.call_tool("list_fraud_alerts", {"limit": 10_000}))
+    with pytest.raises(ToolError):
+        run(server.call_tool("get_ledger_report", {"name": "../bank/ledger"}))
+
+
+def test_report_tool(server):
+    result = run(server.call_tool("get_ledger_report", {"name": "hourly_volume"}))
+    assert json.loads(result.content[0].text) == {"report": "hourly_volume", "rows": []}
 
 
 def test_server_with_payment_credentials_gets_nothing(clients):
@@ -61,6 +69,9 @@ def test_output_never_contains_card_numbers(server, clients, settings, cvv):
     )
     text = run(server.call_tool("list_fraud_alerts", {"limit": 10})).content[0].text
     text += run(server.call_tool("get_payment_stats", {})).content[0].text
+    text += (
+        run(server.call_tool("get_ledger_report", {"name": "blocked_by_reason"})).content[0].text
+    )
     assert settings.card_pan not in text
 
 

@@ -75,6 +75,17 @@ def test_client_cannot_use_another_clients_scope(http, settings):
     assert r.status_code == 403
 
 
+@pytest.mark.parametrize("name", ["hourly_volume.sql", "..%2Fbank%2Fledger", "schema", "x" * 300])
+def test_only_fixed_reports_can_be_requested(http, settings, name):
+    r = signed(http, settings, "fraud-agent", "GET", f"/v1/reports/{name}")
+    assert r.status_code == 404
+
+
+def test_merchants_cannot_read_reports(http, settings):
+    r = signed(http, settings, "merchant-web", "GET", "/v1/reports/hourly_volume")
+    assert r.status_code == 403
+
+
 def test_unexpected_fields_are_rejected(http, settings):
     payload = online_payload() | {"is_admin": True}
     assert signed(http, settings, "merchant-web", "POST", ONLINE, payload).status_code == 422

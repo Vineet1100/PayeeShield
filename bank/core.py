@@ -265,3 +265,7 @@ class Bank:
     def stats(self) -> dict:
         with self._lock:
             return self.ledger.stats()
+
+    def report(self, name: str) -> list[dict]:
+        with self._lock:
+            return self.ledger.report(name)

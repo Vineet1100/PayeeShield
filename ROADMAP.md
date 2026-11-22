@@ -4,7 +4,7 @@ One improvement at a time, top of the list first. Finished items move to **Done*
 
 ## Up next
 
-- [ ] **Ledger reports in the API, MCP server and live demo.** Serve the `queries/` reports from a read-only `/v1/reports/{name}` endpoint and MCP tool, and move the live demo's per-visitor ledger to SQLite too.
+- [ ] **Live demo ledger in SQLite.** Move the live demo's per-visitor ledger to an in-memory SQLite database and show the `queries/` reports on the bank page.
 - [ ] **Format web/ and app.py.** Run black (line length 100) and ruff over the demo and Streamlit code, and add both checks to CI.
 - [ ] **Model evaluation report.** Build a labelled synthetic test set (normal purchases plus injected fraud patterns) and compare the robust z-score, Local Outlier Factor and Isolation Forest on precision, recall and false-positive rate. Publish the table in the README.
 - [ ] **Threshold A/B test.** Simulate two fraud-alert thresholds on the same traffic and compare fraud caught against good customers wrongly flagged, with a significance test on the difference.
@@ -22,6 +22,7 @@ One improvement at a time, top of the list first. Finished items move to **Done*
 
 ## Done
 
+- 2026-11-22: The bank API serves the analytics SQL as read-only `/v1/reports/{name}` JSON, and the MCP server has a matching `get_ledger_report` tool.
 - 2026-11-21: The bank API now keeps transactions and alerts in a SQLite ledger with parameterized queries, plus analytics SQL in `queries/`.
 - 2026-11-16: Fixed the dynamic CVV for pyotp 2.12.
 - 2026-11-14: Hardened the live demo server and marked the demo as a prototype everywhere.

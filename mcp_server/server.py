@@ -23,12 +23,14 @@ from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from bank.client import BankClient, BankError
+from bank.ledger import REPORTS
 
 READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=False)
 
 INSTRUCTIONS = (
     "Read-only fraud tools for the biometric card bank. Use them to check whether a "
-    "purchase looks like the cardholder, review fraud alerts and see payment totals. "
+    "purchase looks like the cardholder, review fraud alerts, see payment totals and run "
+    "analytics reports. "
     "They cannot move money or reveal card numbers, CVVs or keys."
 )
 
@@ -70,6 +72,16 @@ def create_server(bank: BankClient) -> MCPServer:
     def get_payment_stats() -> dict:
         """Totals for all payment attempts: approved, blocked, alerts and approved volume."""
         return call("GET", "/v1/stats")
+
+    @server.tool(annotations=READ_ONLY)
+    def get_ledger_report(name: Literal[tuple(REPORTS)]) -> dict:
+        """Run one of the bank's fixed analytics reports over the ledger.
+
+        approval_rate_by_channel: approval rate per channel.
+        blocked_by_reason: attempts stopped by a security control, by reason.
+        hourly_volume: attempts and approved spending by hour of day.
+        """
+        return call("GET", f"/v1/reports/{name}")
 
     return server
 

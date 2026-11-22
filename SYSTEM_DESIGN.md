@@ -103,7 +103,7 @@ The CVV changes every 2 minutes and each one works once. Three wrong CVVs pause 
 
 ### AI agent through MCP
 
-The agent starts the MCP server as a local process and talks to it over stdio. The server signs requests with the `fraud-agent` credentials, which only allow scoring, alerts and stats. See [MCP server security](#mcp-server-security).
+The agent starts the MCP server as a local process and talks to it over stdio. The server signs requests with the `fraud-agent` credentials, which only allow scoring, alerts, stats and the fixed ledger reports. See [MCP server security](#mcp-server-security).
 
 ## Threat model
 
@@ -119,10 +119,10 @@ Using STRIDE. Every row has a test in `tests/`.
 | **Repudiation** | "I never made that payment" | Append-only audit log of every decision and failed login | `test_audit_log_has_no_card_data` |
 | **Information disclosure** | Card data leaking through logs, errors or the AI agent | Tokenized card numbers, no CVVs in logs, generic errors, docs off in production, owner-only log and ledger files | `test_audit_log_has_no_card_data`, `test_ledger_stores_no_card_numbers`, `test_ledger_file_is_private_and_survives_a_restart`, `test_errors_and_headers_reveal_nothing`, `test_output_never_contains_card_numbers` |
 | **Denial of service** | Flooding the API or brute-forcing signatures | Per-client rate limit, lockout after 20 failed signatures per address, 16 KB body limit | `test_rate_limit`, `test_repeated_bad_signatures_lock_out_the_source`, `test_oversized_body_is_rejected` |
-| **Elevation of privilege** | MCP server or a terminal calling endpoints outside its job | Scopes per client, MCP tools read-only | `test_client_cannot_use_another_clients_scope`, `test_server_with_payment_credentials_gets_nothing` |
+| **Elevation of privilege** | MCP server or a terminal calling endpoints outside its job | Scopes per client, MCP tools read-only | `test_client_cannot_use_another_clients_scope`, `test_merchants_cannot_read_reports`, `test_server_with_payment_credentials_gets_nothing` |
 | **Brute force** | Guessing the 3-digit CVV | 3 attempts, then a 60-second pause | `test_guessing_cvvs_pauses_online_payments` |
 | **Injection** | Malformed or extra JSON fields, script in a merchant id | Strict Pydantic models, unknown fields rejected, merchant ids limited to `[a-z0-9-]` | `test_bad_values_are_rejected`, `test_unexpected_fields_are_rejected` |
-| **SQL injection** | A merchant id or reason crafted to change a ledger query | Parameterized queries only; analytics limited to the fixed files in `queries/`; schema `CHECK` constraints reject impossible rows | `test_values_are_stored_as_data_not_sql`, `test_only_known_reports_can_run`, `test_schema_rejects_impossible_rows` |
+| **SQL injection** | A merchant id or reason crafted to change a ledger query | Parameterized queries only; analytics limited to the fixed files in `queries/`, which `/v1/reports/{name}` serves by name only; schema `CHECK` constraints reject impossible rows | `test_values_are_stored_as_data_not_sql`, `test_only_known_reports_can_run`, `test_only_fixed_reports_can_be_requested`, `test_schema_rejects_impossible_rows` |
 
 ## Key management
 
@@ -144,11 +144,11 @@ Using STRIDE. Every row has a test in `tests/`.
 
 The MCP server is the most interesting part to secure, because whatever an AI agent can call, a prompt injection could make it call.
 
-- **Read-only tools.** `score_transaction`, `list_fraud_alerts` and `get_payment_stats`. There is deliberately no tool that authorizes, approves or refunds anything.
+- **Read-only tools.** `score_transaction`, `list_fraud_alerts`, `get_payment_stats` and `get_ledger_report`. There is deliberately no tool that authorizes, approves or refunds anything.
 - **Least privilege.** Even if the server process were compromised, its credentials can't reach the payment endpoints. The bank enforces this, not the server.
 - **No network port.** stdio only, so there is nothing to attack over the network.
 - **No secrets in output.** The bank never returns card numbers, CVVs or keys, so no tool can leak them.
-- **Validated input.** Amount, hour, channel and limit are range-checked before any request is made.
+- **Validated input.** Amount, hour, channel and limit are range-checked, and a report name must match a file in `queries/`, before any request is made.
 - **Prompt injection.** Alert text comes from fixed templates, and merchant ids are restricted to `[a-z0-9-]`, so a merchant can't plant instructions for the agent inside an alert.
 - **TLS for remote banks.** The client refuses to send credentials over plain HTTP to anything other than localhost.
 
