@@ -70,12 +70,12 @@ def _hour() -> int:
 
 def _amount(data: dict, default: float) -> float:
     try:
-        a = float(data.get("amount", default))
+        a = round(float(data.get("amount", default)), 2)
     except (TypeError, ValueError):
         abort(400)
-    if not 0 < a <= 100_000:
+    if not 0 < a <= 100_000:   # checked after rounding, so $0.001 can't become a $0 payment
         abort(400)
-    return round(a, 2)
+    return a
 
 
 def create_app(config: dict | None = None) -> Flask:
@@ -127,8 +127,10 @@ def create_app(config: dict | None = None) -> Flask:
 
     def page(template: str, active: str, **kw):
         lab = g.lab
-        lab.expire_pending()
-        return render_template(template, active=active, missions=MISSIONS, stats=lab.stats(), done=lab.done,
+        with lab.lock:
+            lab.expire_pending()
+            stats = lab.stats()
+        return render_template(template, active=active, missions=MISSIONS, stats=stats, done=lab.done,
                                alerts=lab.alerts, **kw)
 
     # ------------------------------------------------------------------ pages
@@ -154,7 +156,9 @@ def create_app(config: dict | None = None) -> Flask:
 
     @app.get("/bank")
     def bank_page():
-        return page("bank.html", "bank", ledger=list(reversed(g.lab.ledger)))
+        with g.lab.lock:
+            ledger, reports = list(reversed(g.lab.ledger)), g.lab.reports()
+        return page("bank.html", "bank", ledger=ledger, reports=reports)
 
     @app.get("/how")
     def how():

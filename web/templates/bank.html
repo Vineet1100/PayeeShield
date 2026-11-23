@@ -31,4 +31,52 @@
     </ul>
   </section>
 </div>
+{% set sql = "https://github.com/Vineet1100/biometric-card-fraud-analytics/blob/main/queries/" %}
+<section class="panel analytics" aria-label="Ledger analytics">
+  <div class="panel-h"><h2>Ledger analytics</h2><span>SQL on your SQLite ledger, as of page load</span></div>
+  {% if ledger %}
+  <div class="reports">
+    <div class="report">
+      <h3>Approval rate by channel</h3>
+      <a class="mono" href="{{ sql }}approval_rate_by_channel.sql" target="_blank" rel="noopener">approval_rate_by_channel.sql</a>
+      <table>
+        <thead><tr><th>Channel</th><th class="r">Attempts</th><th class="r">Approved</th><th class="r">Rate</th></tr></thead>
+        <tbody>
+          {% for r in reports.approval_rate_by_channel %}
+          <tr><td>{{ r.channel | replace('_', '-') | title }}</td><td class="r">{{ r.attempts }}</td><td class="r">{{ r.approved }}</td><td class="r">{{ r.approval_rate_pct }}%</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="report">
+      <h3>Blocked attempts by reason</h3>
+      <a class="mono" href="{{ sql }}blocked_by_reason.sql" target="_blank" rel="noopener">blocked_by_reason.sql</a>
+      <table>
+        <thead><tr><th>Reason</th><th>Channel</th><th class="r">Attempts</th></tr></thead>
+        <tbody>
+          {% for r in reports.blocked_by_reason %}
+          <tr><td>{{ r.reason }}</td><td class="nw">{{ r.channel | replace('_', '-') | title }}</td><td class="r">{{ r.attempts }}</td></tr>
+          {% else %}
+          <tr><td colspan="3">Nothing blocked yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="report">
+      <h3>Volume by hour</h3>
+      <a class="mono" href="{{ sql }}hourly_volume.sql" target="_blank" rel="noopener">hourly_volume.sql</a>
+      <table>
+        <thead><tr><th>Hour</th><th class="r">Attempts</th><th class="r">Approved</th><th class="r">Volume</th></tr></thead>
+        <tbody>
+          {% for r in reports.hourly_volume %}
+          <tr><td>{{ '%02d' % r.hour }}:00</td><td class="r">{{ r.attempts }}</td><td class="r">{{ r.approved }}</td><td class="r">${{ '{:,.2f}'.format(r.approved_volume) }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <p class="empty">The reports appear once the ledger has a payment in it.</p>
+  {% endif %}
+</section>
 {% endblock %}

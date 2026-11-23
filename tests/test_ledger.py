@@ -87,6 +87,16 @@ def test_values_are_stored_as_data_not_sql():
     assert tuple(row) == (hostile, hostile)
 
 
+def test_keep_latest_drops_old_rows_and_their_alerts():
+    ledger = Ledger()
+    first = ledger.add_transaction(blocked())
+    ledger.add_alert(first, "high", "card testing")
+    kept = [ledger.add_transaction(tx()) for _ in range(2)]
+    ledger.keep_latest(2)
+    assert [r["id"] for r in ledger.transactions()] == kept
+    assert ledger.stats()["alerts"] == 0
+
+
 @pytest.mark.parametrize(
     "bad",
     [{"amount": Decimal("-5.00")}, {"channel": "atm"}, {"hour": 24}],

@@ -80,6 +80,24 @@ class Ledger:
                 (transaction_id, severity, title),
             )
 
+    def transactions(self) -> list[sqlite3.Row]:
+        """Every stored transaction, oldest first."""
+        return self._db.execute("SELECT * FROM transactions ORDER BY id").fetchall()
+
+    def keep_latest(self, count: int) -> None:
+        """Drop all but the newest ``count`` transactions, and their alerts."""
+        with self._db:
+            self._db.execute(
+                "DELETE FROM alerts WHERE transaction_id NOT IN"
+                " (SELECT id FROM transactions ORDER BY id DESC LIMIT ?)",
+                (count,),
+            )
+            self._db.execute(
+                "DELETE FROM transactions WHERE id NOT IN"
+                " (SELECT id FROM transactions ORDER BY id DESC LIMIT ?)",
+                (count,),
+            )
+
     def blocked_since(self, channel: str, since: float) -> int:
         return self._db.execute(
             "SELECT COUNT(*) FROM transactions WHERE security_block = 1 AND channel = ? AND at >= ?",

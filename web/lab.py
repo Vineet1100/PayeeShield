@@ -12,6 +12,9 @@ Streamlit app (``app.py``) and the bank API (``bank/``):
 - a valid CVV still needs the owner to approve the purchase within 60 s
 - after every attempt the fraud monitor looks across the whole log for card testing,
   leaked data, denied purchases and spending that doesn't fit the owner
+
+Payment attempts are kept in an in-memory SQLite ledger, the same ``bank.ledger.Ledger``
+the bank API uses, so the bank page can show the analytics SQL from ``queries/``.
 """
 from __future__ import annotations
 
@@ -21,11 +24,14 @@ import threading
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from decimal import Decimal
 
 import pyotp
 
 from bank import fraud
+from bank.core import Transaction
 from bank.cvv import DynamicCVV
+from bank.ledger import REPORTS, Ledger
 
 UNLOCK_SECONDS = 15
 BIO_MAX_FAILURES, BIO_LOCK_SECONDS = 3, 30
@@ -38,13 +44,16 @@ MAX_ALERTS = 100
 BURST_SECONDS, BURST_COUNT = 5 * 60, 3
 
 CARD_PAN = "4111111111111111"
-MERCHANT_STORE = "Corner Market"
-MERCHANT_ONLINE = "Northwind Electronics"
+CARD_REF = "tok_demo"  # the ledger stores a token, never the card number
+LEDGER_CHANNELS = {"In-Store": "in_store", "Online": "online"}
+PAGE_CHANNELS = {v: k for k, v in LEDGER_CHANNELS.items()}
+MERCHANTS = {"In-Store": "corner-market", "Online": "northwind-electronics"}
 MISSIONS = (1, 2, 3, 4)
 
 
 @dataclass
 class Entry:
+    id: int                   # ledger row id, stable when old rows are dropped
     t: float                  # unix time
     channel: str              # "In-Store" or "Online"
     amount: float
@@ -61,7 +70,7 @@ class Entry:
 
 @dataclass
 class Alert:
-    key: str
+    key: tuple[str, int]      # (rule, ledger row id), so each entry raises each alert once
     sev: str                  # "high" or "med"
     title: str
     text: str
@@ -86,9 +95,9 @@ class CardLab:
         self.online_blocked_until = 0.0
         self.used_steps: set[int] = set()
         self.pending: Pending | None = None
-        self.ledger: list[Entry] = []
+        self.db = Ledger()
         self.alerts: list[Alert] = []
-        self._alert_keys: set[str] = set()
+        self._alert_keys: set[tuple[str, int]] = set()
         self.done: set[int] = set()
         self.lock = threading.Lock()
 
@@ -118,15 +127,31 @@ class CardLab:
         return dict(result="fail", message=f"Fingerprint rejected. That isn't the owner. {BIO_MAX_FAILURES - self.bio_fails} tries left before lockout.")
 
     # ------------------------------------------------------------------ bank
+    @property
+    def ledger(self) -> list[Entry]:
+        return [
+            Entry(r["id"], r["at"], PAGE_CHANNELS[r["channel"]], r["amount_cents"] / 100,
+                  bool(r["approved"]), r["reason"], bool(r["security_block"]), r["hour"])
+            for r in self.db.transactions()
+        ]
+
     def _record(self, channel: str, amount: float, ok: bool, reason: str, hour: int, block: bool = False) -> Entry:
-        e = Entry(t=self.clock(), channel=channel, amount=round(float(amount), 2), ok=ok, reason=reason, block=block, hour=hour)
-        self.ledger.append(e)
-        if len(self.ledger) > MAX_LEDGER:
-            self.ledger = self.ledger[-MAX_LEDGER:]
-            self._alert_keys.clear()       # indexes shifted; keep current alerts, rebuild keys below
-            self._alert_keys.update(a.key for a in self.alerts)
-        self._monitor()
-        return e
+        tx = Transaction(
+            at=self.clock(),
+            channel=LEDGER_CHANNELS[channel],
+            card_ref=CARD_REF,
+            merchant_id=MERCHANTS[channel],
+            amount=Decimal(str(round(float(amount), 2))),
+            approved=ok,
+            reason=reason,
+            security_block=block,
+            hour=hour,
+        )
+        self.db.add_transaction(tx)
+        self.db.keep_latest(MAX_LEDGER)
+        entries = self.ledger
+        self._monitor(entries)
+        return entries[-1]
 
     def tap(self, amount: float, hour: int) -> Entry:
         left = self.unlocked_until - self.clock()
@@ -224,29 +249,31 @@ class CardLab:
         return j
 
     # ------------------------------------------------------------------ fraud monitor
-    def _monitor(self) -> None:
+    def _monitor(self, entries: list[Entry]) -> None:
+        # forget keys of rows the ledger has dropped, so the set stays as small as the ledger
+        self._alert_keys = {k for k in self._alert_keys if k[1] >= entries[0].id}
         found: list[Alert] = []
         for ch in ("In-Store", "Online"):
-            blocks = [(i, e) for i, e in enumerate(self.ledger) if e.block and e.channel == ch]
-            for n, (i, e) in enumerate(blocks):
-                in_window = sum(1 for _, x in blocks[: n + 1] if e.t - x.t <= BURST_SECONDS)
+            blocks = [e for e in entries if e.block and e.channel == ch]
+            for n, e in enumerate(blocks):
+                in_window = sum(1 for x in blocks[: n + 1] if e.t - x.t <= BURST_SECONDS)
                 if in_window == BURST_COUNT:
-                    found.append(Alert(f"burst-{i}", "high", f"3 blocked {ch.lower()} attempts in 5 minutes",
+                    found.append(Alert(("burst", e.id), "high", f"3 blocked {ch.lower()} attempts in 5 minutes",
                                        "Repeated failures in a short time look like someone testing a stolen card."))
-        for i, e in enumerate(self.ledger):
+        for e in entries:
             if "expired" in e.reason:
-                found.append(Alert(f"leak-{i}", "high", f"Stolen card data used online (${e.amount:,.2f})",
+                found.append(Alert(("leak", e.id), "high", f"Stolen card data used online (${e.amount:,.2f})",
                                    "Someone entered an old CVV, so the card details were probably leaked."))
             if "denied" in e.reason:
-                found.append(Alert(f"deny-{i}", "high", f"Purchase rejected by the owner (${e.amount:,.2f})",
+                found.append(Alert(("deny", e.id), "high", f"Purchase rejected by the owner (${e.amount:,.2f})",
                                    "The CVV was right but the owner said it wasn't them. Their current code may have been phished."))
-            if e.ok and f"z-{i}" not in self._alert_keys and f"lof-{i}" not in self._alert_keys:
+            if e.ok and ("z", e.id) not in self._alert_keys and ("lof", e.id) not in self._alert_keys:
                 s = fraud.score(e.amount, e.hour, e.channel == "Online")
                 if s.robust_z > fraud.ROBUST_Z_LIMIT:
-                    found.append(Alert(f"z-{i}", "med", f"Unusually large {e.channel.lower()} purchase (${e.amount:,.2f})",
+                    found.append(Alert(("z", e.id), "med", f"Unusually large {e.channel.lower()} purchase (${e.amount:,.2f})",
                                        f"Robust z-score {s.robust_z:.1f}, far above the owner's normal range."))
                 elif s.lof_flagged:
-                    found.append(Alert(f"lof-{i}", "med", f"Unusual purchase pattern (${e.amount:,.2f} at {e.hour}:00)",
+                    found.append(Alert(("lof", e.id), "med", f"Unusual purchase pattern (${e.amount:,.2f} at {e.hour}:00)",
                                        "The model rates this amount, time and channel as unlike the owner's history."))
         for a in found:
             if a.key not in self._alert_keys:
@@ -257,9 +284,13 @@ class CardLab:
 
     # ------------------------------------------------------------------ what the page shows
     def stats(self) -> dict:
-        ok = [e for e in self.ledger if e.ok]
-        return dict(attempts=len(self.ledger), approved=len(ok), blocked=sum(e.block for e in self.ledger),
-                    alerts=len(self.alerts), volume=round(sum(e.amount for e in ok), 2))
+        s = self.db.stats()
+        return dict(attempts=s["attempts"], approved=s["approved"], blocked=s["blocked"],
+                    alerts=len(self.alerts), volume=float(s["approved_volume"]))
+
+    def reports(self) -> dict[str, list[dict]]:
+        """The analytics SQL in queries/, run on this visitor's ledger."""
+        return {name: self.db.report(name) for name in REPORTS}
 
     def state(self, since_alert: int = 0) -> dict:
         self.expire_pending()

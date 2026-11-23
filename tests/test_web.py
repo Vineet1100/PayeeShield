@@ -76,7 +76,13 @@ def test_api_only_accepts_json(client):
 
 
 @pytest.mark.parametrize(
-    "body", [{"amount": -1, "hour": 12}, {"amount": "x", "hour": 12}, {"amount": 5, "hour": 24}]
+    "body",
+    [
+        {"amount": -1, "hour": 12},
+        {"amount": 0.001, "hour": 12},
+        {"amount": "x", "hour": 12},
+        {"amount": 5, "hour": 24},
+    ],
 )
 def test_bad_input_is_rejected(client, body):
     assert client.post("/api/tap", json=body).status_code == 400
@@ -257,3 +263,28 @@ def test_a_visitor_log_has_a_size_limit(lab):
     for _ in range(MAX_LEDGER + 50):
         lab.tap(5, 12)
     assert len(lab.ledger) == MAX_LEDGER and len(lab.alerts) <= MAX_ALERTS
+
+
+def test_alerts_are_not_raised_twice_after_old_rows_are_dropped(lab):
+    from web.lab import MAX_LEDGER
+
+    lab.pay_online("4111111111111111", lab.cvv_now(), 80, 12)
+    lab.decide("deny")
+    for _ in range(MAX_LEDGER + 5):
+        lab.tap(5, 12)
+    assert sum(a.key[0] == "deny" for a in lab.alerts) == 1
+
+
+def test_ledger_stores_a_token_not_the_card_number(lab):
+    lab.tap(20, 12)
+    rows = [dict(r) for r in lab.db.transactions()]
+    assert rows[0]["card_ref"] == "tok_demo" and "4111" not in str(rows)
+
+
+def test_bank_page_shows_the_sql_reports(client):
+    client.post("/api/tap", json={"amount": 42.5, "hour": 9})
+    client.post("/api/scan", json={"finger": "owner"})
+    client.post("/api/tap", json={"amount": 10, "hour": 9})
+    html = client.get("/bank").get_data(as_text=True)
+    assert "approval_rate_by_channel.sql" in html and "50.0%" in html
+    assert "Chip locked: fingerprint required" in html and "$10.00" in html
