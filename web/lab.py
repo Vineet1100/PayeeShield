@@ -37,7 +37,7 @@ CVV_STEP_SECONDS, CVV_DIGITS = 120, 3
 CVV_MAX_FAILURES, CVV_LOCK_SECONDS = 3, 60
 STALE_LOOKBACK_STEPS = 4
 PUSH_SECONDS = 60
-MAX_LEDGER = 300            # payment attempts kept per visitor; older ones are dropped
+MAX_LEDGER = 300  # payment attempts kept per visitor; older ones are dropped
 MAX_ALERTS = 100
 BURST_SECONDS, BURST_COUNT = 5 * 60, 3
 
@@ -50,14 +50,14 @@ MERCHANTS = {"In-Store": "corner-market", "Online": "northwind-electronics"}
 
 @dataclass
 class Entry:
-    id: int                   # ledger row id, stable when old rows are dropped
-    t: float                  # unix time
-    channel: str              # "In-Store" or "Online"
+    id: int  # ledger row id, stable when old rows are dropped
+    t: float  # unix time
+    channel: str  # "In-Store" or "Online"
     amount: float
     ok: bool
     reason: str
-    block: bool               # counted as a blocked fraud attempt
-    hour: int                 # the visitor's local hour, for the fraud model
+    block: bool  # counted as a blocked fraud attempt
+    hour: int  # the visitor's local hour, for the fraud model
 
     def public(self) -> dict:
         d = asdict(self)
@@ -67,8 +67,8 @@ class Entry:
 
 @dataclass
 class Alert:
-    key: tuple[str, int]      # (rule, ledger row id), so each entry raises each alert once
-    sev: str                  # "high" or "med"
+    key: tuple[str, int]  # (rule, ledger row id), so each entry raises each alert once
+    sev: str  # "high" or "med"
     title: str
     text: str
     t: float = field(default_factory=time.time)
@@ -113,26 +113,48 @@ class CardLab:
         now = self.clock()
         if now < self.bio_locked_until:
             left = int(self.bio_locked_until - now + 0.999)
-            return dict(result="locked", message=f"Sensor is locked after 3 failed scans. Try again in {left} seconds.")
+            return {
+                "result": "locked",
+                "message": f"Sensor is locked after 3 failed scans. Try again in {left} seconds.",
+            }
         if owner:
             self.unlocked_until, self.bio_fails = now + UNLOCK_SECONDS, 0
-            return dict(result="match", message="Fingerprint matched on the card. The chip is live for 15 seconds. Tap it at the terminal.")
+            return {
+                "result": "match",
+                "message": "Fingerprint matched on the card. The chip is live for 15 seconds. Tap it at the terminal.",
+            }
         self.bio_fails += 1
         if self.bio_fails >= BIO_MAX_FAILURES:
             self.bio_locked_until, self.bio_fails = now + BIO_LOCK_SECONDS, 0
-            return dict(result="lockout", message="Third wrong finger. The sensor locks for 30 seconds, so a thief can't keep trying.")
-        return dict(result="fail", message=f"Fingerprint rejected. That isn't the owner. {BIO_MAX_FAILURES - self.bio_fails} tries left before lockout.")
+            return {
+                "result": "lockout",
+                "message": "Third wrong finger. The sensor locks for 30 seconds, so a thief can't keep trying.",
+            }
+        return {
+            "result": "fail",
+            "message": f"Fingerprint rejected. That isn't the owner. {BIO_MAX_FAILURES - self.bio_fails} tries left before lockout.",
+        }
 
     # ------------------------------------------------------------------ bank
     @property
     def ledger(self) -> list[Entry]:
         return [
-            Entry(r["id"], r["at"], PAGE_CHANNELS[r["channel"]], r["amount_cents"] / 100,
-                  bool(r["approved"]), r["reason"], bool(r["security_block"]), r["hour"])
+            Entry(
+                r["id"],
+                r["at"],
+                PAGE_CHANNELS[r["channel"]],
+                r["amount_cents"] / 100,
+                bool(r["approved"]),
+                r["reason"],
+                bool(r["security_block"]),
+                r["hour"],
+            )
             for r in self.db.transactions()
         ]
 
-    def _record(self, channel: str, amount: float, ok: bool, reason: str, hour: int, block: bool = False) -> Entry:
+    def _record(
+        self, channel: str, amount: float, ok: bool, reason: str, hour: int, block: bool = False
+    ) -> Entry:
         tx = Transaction(
             at=self.clock(),
             channel=LEDGER_CHANNELS[channel],
@@ -153,41 +175,71 @@ class CardLab:
     def tap(self, amount: float, hour: int) -> Entry:
         left = self.unlocked_until - self.clock()
         if left <= 0:
-            return self._record("In-Store", amount, False, "Chip locked: fingerprint required", hour, block=True)
+            return self._record(
+                "In-Store", amount, False, "Chip locked: fingerprint required", hour, block=True
+            )
         self.done.add(1)
-        return self._record("In-Store", amount, True, f"Fingerprint verified, {int(left + 0.999)}s left", hour)
+        return self._record(
+            "In-Store", amount, True, f"Fingerprint verified, {int(left + 0.999)}s left", hour
+        )
 
     def pay_online(self, pan: str, cvv: str, amount: float, hour: int) -> dict:
         """Check an online payment. Returns the logged entry, or a pending approval if the CVV is good."""
         now = self.clock()
         if self.pending:
-            return dict(status="busy", message="A purchase is already waiting for approval.")
+            return {"status": "busy", "message": "A purchase is already waiting for approval."}
         if "".join(ch for ch in pan if ch.isdigit()) != CARD_PAN:
-            return dict(status="invalid", message="Card number not recognised.")
+            return {"status": "invalid", "message": "Card number not recognised."}
         if now < self.online_blocked_until:
             left = int(self.online_blocked_until - now + 0.999)
-            e = self._record("Online", amount, False, "Online payments blocked after 3 wrong CVVs", hour, block=True)
-            return dict(status="declined", entry=e, message=f"Too many wrong codes. Online payments paused for {left}s.")
+            e = self._record(
+                "Online",
+                amount,
+                False,
+                "Online payments blocked after 3 wrong CVVs",
+                hour,
+                block=True,
+            )
+            return {
+                "status": "declined",
+                "entry": e,
+                "message": f"Too many wrong codes. Online payments paused for {left}s.",
+            }
         if not (len(cvv) == CVV_DIGITS and cvv.isdigit()):
-            return dict(status="invalid", message="The CVV is 3 digits.")
+            return {"status": "invalid", "message": "The CVV is 3 digits."}
         step = self.step()
         if secrets.compare_digest(cvv, self.code_at(step)):
             if step in self.used_steps:
                 self.cvv_fails += 1
-                e = self._record("Online", amount, False, "CVV already used (replay blocked)", hour, block=True)
-                return dict(status="declined", entry=e, message="That code was already used. Each code works once.")
+                e = self._record(
+                    "Online", amount, False, "CVV already used (replay blocked)", hour, block=True
+                )
+                return {
+                    "status": "declined",
+                    "entry": e,
+                    "message": "That code was already used. Each code works once.",
+                }
             self.used_steps.add(step)
             self.cvv_fails = 0
-            self.pending = Pending(amount=round(float(amount), 2), hour=hour, expires=now + PUSH_SECONDS)
-            return dict(status="pending", message="CVV is valid. Approve the purchase to finish.")
+            self.pending = Pending(
+                amount=round(float(amount), 2), hour=hour, expires=now + PUSH_SECONDS
+            )
+            return {"status": "pending", "message": "CVV is valid. Approve the purchase to finish."}
         self.cvv_fails += 1
-        stale = any(secrets.compare_digest(cvv, self.code_at(step - k)) for k in range(1, STALE_LOOKBACK_STEPS + 1))
-        reason = "CVV expired: matches an earlier window (likely leaked data)" if stale else "Incorrect CVV"
+        stale = any(
+            secrets.compare_digest(cvv, self.code_at(step - k))
+            for k in range(1, STALE_LOOKBACK_STEPS + 1)
+        )
+        reason = (
+            "CVV expired: matches an earlier window (likely leaked data)"
+            if stale
+            else "Incorrect CVV"
+        )
         if self.cvv_fails >= CVV_MAX_FAILURES:
             self.online_blocked_until, self.cvv_fails = now + CVV_LOCK_SECONDS, 0
             reason += "; online payments paused 60s"
         e = self._record("Online", amount, False, reason, hour, block=True)
-        return dict(status="declined", entry=e, message=reason, stale=stale)
+        return {"status": "declined", "entry": e, "message": reason, "stale": stale}
 
     def decide(self, decision: str) -> Entry | None:
         """The owner's answer to a pending approval: approve, badfinger, deny or timeout."""
@@ -197,12 +249,18 @@ class CardLab:
         self.pending = None
         if decision == "approve":
             self.done.add(2)
-            return self._record("Online", p.amount, True, "CVV valid, approved with fingerprint", p.hour)
+            return self._record(
+                "Online", p.amount, True, "CVV valid, approved with fingerprint", p.hour
+            )
         if decision == "badfinger":
-            return self._record("Online", p.amount, False, "Approval failed fingerprint check", p.hour, block=True)
+            return self._record(
+                "Online", p.amount, False, "Approval failed fingerprint check", p.hour, block=True
+            )
         if decision == "timeout":
             return self._record("Online", p.amount, False, "No answer to approval request", p.hour)
-        return self._record("Online", p.amount, False, "Owner denied the purchase", p.hour, block=True)
+        return self._record(
+            "Online", p.amount, False, "Owner denied the purchase", p.hour, block=True
+        )
 
     def expire_pending(self) -> None:
         if self.pending and self.clock() >= self.pending.expires:
@@ -235,12 +293,21 @@ class CardLab:
     def judge(amount: float, hour: int, online: bool) -> dict:
         s = fraud.score(amount, hour, online)
         lof, limit = fraud.lof_details(amount, hour, online)
-        return dict(z=s.robust_z, lof=round(lof, 3), lof_limit=round(limit, 3), outlier=s.robust_z > fraud.ROBUST_Z_LIMIT,
-                    pattern=s.lof_flagged, flagged=s.flagged, reason=s.reason)
+        return {
+            "z": s.robust_z,
+            "lof": round(lof, 3),
+            "lof_limit": round(limit, 3),
+            "outlier": s.robust_z > fraud.ROBUST_Z_LIMIT,
+            "pattern": s.lof_flagged,
+            "flagged": s.flagged,
+            "reason": s.reason,
+        }
 
     def judge_preset(self, amount: float, hour: int, online: bool) -> dict:
         j = self.judge(amount, hour, online)
-        if j["pattern"] and not j["outlier"] and hour < 6:   # caught the 3 AM lunch: mission complete
+        if (
+            j["pattern"] and not j["outlier"] and hour < 6
+        ):  # caught the 3 AM lunch: mission complete
             self.done.add(4)
         return j
 
@@ -254,23 +321,57 @@ class CardLab:
             for n, e in enumerate(blocks):
                 in_window = sum(1 for x in blocks[: n + 1] if e.t - x.t <= BURST_SECONDS)
                 if in_window == BURST_COUNT:
-                    found.append(Alert(("burst", e.id), "high", f"3 blocked {ch.lower()} attempts in 5 minutes",
-                                       "Repeated failures in a short time look like someone testing a stolen card."))
+                    found.append(
+                        Alert(
+                            ("burst", e.id),
+                            "high",
+                            f"3 blocked {ch.lower()} attempts in 5 minutes",
+                            "Repeated failures in a short time look like someone testing a stolen card.",
+                        )
+                    )
         for e in entries:
             if "expired" in e.reason:
-                found.append(Alert(("leak", e.id), "high", f"Stolen card data used online (${e.amount:,.2f})",
-                                   "Someone entered an old CVV, so the card details were probably leaked."))
+                found.append(
+                    Alert(
+                        ("leak", e.id),
+                        "high",
+                        f"Stolen card data used online (${e.amount:,.2f})",
+                        "Someone entered an old CVV, so the card details were probably leaked.",
+                    )
+                )
             if "denied" in e.reason:
-                found.append(Alert(("deny", e.id), "high", f"Purchase rejected by the owner (${e.amount:,.2f})",
-                                   "The CVV was right but the owner said it wasn't them. Their current code may have been phished."))
-            if e.ok and ("z", e.id) not in self._alert_keys and ("lof", e.id) not in self._alert_keys:
+                found.append(
+                    Alert(
+                        ("deny", e.id),
+                        "high",
+                        f"Purchase rejected by the owner (${e.amount:,.2f})",
+                        "The CVV was right but the owner said it wasn't them. Their current code may have been phished.",
+                    )
+                )
+            if (
+                e.ok
+                and ("z", e.id) not in self._alert_keys
+                and ("lof", e.id) not in self._alert_keys
+            ):
                 s = fraud.score(e.amount, e.hour, e.channel == "Online")
                 if s.robust_z > fraud.ROBUST_Z_LIMIT:
-                    found.append(Alert(("z", e.id), "med", f"Unusually large {e.channel.lower()} purchase (${e.amount:,.2f})",
-                                       f"Robust z-score {s.robust_z:.1f}, far above the owner's normal range."))
+                    found.append(
+                        Alert(
+                            ("z", e.id),
+                            "med",
+                            f"Unusually large {e.channel.lower()} purchase (${e.amount:,.2f})",
+                            f"Robust z-score {s.robust_z:.1f}, far above the owner's normal range.",
+                        )
+                    )
                 elif s.lof_flagged:
-                    found.append(Alert(("lof", e.id), "med", f"Unusual purchase pattern (${e.amount:,.2f} at {e.hour}:00)",
-                                       "The model rates this amount, time and channel as unlike the owner's history."))
+                    found.append(
+                        Alert(
+                            ("lof", e.id),
+                            "med",
+                            f"Unusual purchase pattern (${e.amount:,.2f} at {e.hour}:00)",
+                            "The model rates this amount, time and channel as unlike the owner's history.",
+                        )
+                    )
         for a in found:
             if a.key not in self._alert_keys:
                 self._alert_keys.add(a.key)
@@ -281,8 +382,13 @@ class CardLab:
     # ------------------------------------------------------------------ what the page shows
     def stats(self) -> dict:
         s = self.db.stats()
-        return dict(attempts=s["attempts"], approved=s["approved"], blocked=s["blocked"],
-                    alerts=len(self.alerts), volume=float(s["approved_volume"]))
+        return {
+            "attempts": s["attempts"],
+            "approved": s["approved"],
+            "blocked": s["blocked"],
+            "alerts": len(self.alerts),
+            "volume": float(s["approved_volume"]),
+        }
 
     def reports(self) -> dict[str, list[dict]]:
         """The analytics SQL in queries/, run on this visitor's ledger."""
@@ -291,18 +397,22 @@ class CardLab:
     def state(self) -> dict:
         self.expire_pending()
         now = self.clock()
-        return dict(
-            unlock_left=max(0.0, round(self.unlocked_until - now, 2)),
-            bio_lock_left=max(0.0, round(self.bio_locked_until - now, 2)),
-            online_block_left=max(0.0, round(self.online_blocked_until - now, 2)),
-            cvv=self.cvv_now(),
-            cvv_left=CVV_STEP_SECONDS - int(now) % CVV_STEP_SECONDS,
-            pending=dict(amount=self.pending.amount, left=round(self.pending.expires - now, 1)) if self.pending else None,
-            stats=self.stats(),
-            ledger=[e.public() for e in reversed(self.ledger)],
-            alerts=[asdict(a) for a in self.alerts],
-            done=sorted(self.done),
-        )
+        return {
+            "unlock_left": max(0.0, round(self.unlocked_until - now, 2)),
+            "bio_lock_left": max(0.0, round(self.bio_locked_until - now, 2)),
+            "online_block_left": max(0.0, round(self.online_blocked_until - now, 2)),
+            "cvv": self.cvv_now(),
+            "cvv_left": CVV_STEP_SECONDS - int(now) % CVV_STEP_SECONDS,
+            "pending": (
+                {"amount": self.pending.amount, "left": round(self.pending.expires - now, 1)}
+                if self.pending
+                else None
+            ),
+            "stats": self.stats(),
+            "ledger": [e.public() for e in reversed(self.ledger)],
+            "alerts": [asdict(a) for a in self.alerts],
+            "done": sorted(self.done),
+        }
 
 
 class SessionStore:
@@ -331,8 +441,10 @@ class SessionStore:
         stale = [k for k, (_, seen) in self._labs.items() if now - seen > self.ttl]
         for k in stale:
             del self._labs[k]
-        if len(self._labs) >= self.max:          # still full: drop the least recently used
-            for k, _ in sorted(self._labs.items(), key=lambda kv: kv[1][1])[: len(self._labs) - self.max + 1]:
+        if len(self._labs) >= self.max:  # still full: drop the least recently used
+            for k, _ in sorted(self._labs.items(), key=lambda kv: kv[1][1])[
+                : len(self._labs) - self.max + 1
+            ]:
                 del self._labs[k]
 
     def __len__(self) -> int:

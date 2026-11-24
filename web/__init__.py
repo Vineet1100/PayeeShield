@@ -17,7 +17,17 @@ import time
 from collections import defaultdict, deque
 from datetime import timedelta
 
-from flask import Flask, abort, g, jsonify, redirect, render_template, request, session, url_for
+from flask import (
+    Flask,
+    abort,
+    g,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from bank import fraud
@@ -27,9 +37,11 @@ from .lab import CARD_PAN, SessionStore
 
 ROUTE_TO_MISSION = {m["route"]: n for n, m in MISSIONS.items()}
 
-CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
-       "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; "
-       "base-uri 'none'; form-action 'self'; object-src 'none'")
+CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+    "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; "
+    "base-uri 'none'; form-action 'self'; object-src 'none'"
+)
 
 
 class RateLimiter:
@@ -49,8 +61,10 @@ class RateLimiter:
             if len(q) >= self.limit:
                 return False
             q.append(now)
-            if len(self.hits) > 20_000:            # forget idle addresses
-                for k in [k for k, v in self.hits.items() if not v or now - v[-1] > self.window][:10_000]:
+            if len(self.hits) > 20_000:  # forget idle addresses
+                for k in [k for k, v in self.hits.items() if not v or now - v[-1] > self.window][
+                    :10_000
+                ]:
                     del self.hits[k]
             return True
 
@@ -72,7 +86,7 @@ def _amount(data: dict, default: float) -> float:
         a = round(float(data.get("amount", default)), 2)
     except (TypeError, ValueError):
         abort(400)
-    if not 0 < a <= 100_000:   # checked after rounding, so $0.001 can't become a $0 payment
+    if not 0 < a <= 100_000:  # checked after rounding, so $0.001 can't become a $0 payment
         abort(400)
     return a
 
@@ -83,16 +97,19 @@ def create_app(config: dict | None = None) -> Flask:
         SECRET_KEY=os.environ.get("SECRET_KEY") or secrets.token_hex(32),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
-        SESSION_COOKIE_SECURE=os.environ.get("FLASK_ENV") != "development" and "RENDER" in os.environ,
+        SESSION_COOKIE_SECURE=os.environ.get("FLASK_ENV") != "development"
+        and "RENDER" in os.environ,
         PERMANENT_SESSION_LIFETIME=timedelta(hours=2),
         MAX_CONTENT_LENGTH=16 * 1024,
         LABS=SessionStore(),
-        RATE_LIMIT=(120, 60.0),     # requests per minute per address; the page itself uses about 30
+        RATE_LIMIT=(120, 60.0),  # requests per minute per address; the page itself uses about 30
     )
     if config:
         app.config.update(config)
     if "RENDER" in os.environ:
-        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)   # real visitor address behind Render's proxy
+        app.wsgi_app = ProxyFix(
+            app.wsgi_app, x_for=1, x_proto=1
+        )  # real visitor address behind Render's proxy
     limiter = RateLimiter(*app.config["RATE_LIMIT"])
 
     @app.before_request
@@ -102,7 +119,7 @@ def create_app(config: dict | None = None) -> Flask:
         if not limiter.allow(request.remote_addr or "unknown"):
             return jsonify(error="Too many requests. Slow down and try again in a minute."), 429
         if request.method == "POST" and not request.is_json:
-            abort(415)       # JSON only, which also stops plain cross-site form posts
+            abort(415)  # JSON only, which also stops plain cross-site form posts
         sid, lab = app.config["LABS"].get(session.get("sid"))
         session.permanent = True
         session["sid"] = sid
@@ -113,10 +130,15 @@ def create_app(config: dict | None = None) -> Flask:
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("Referrer-Policy", "same-origin")
         resp.headers.setdefault("X-Frame-Options", "DENY")
-        resp.headers.setdefault("X-Robots-Tag", "noindex, nofollow")   # a prototype, not a service to be found
+        resp.headers.setdefault(
+            "X-Robots-Tag", "noindex, nofollow"
+        )  # a prototype, not a service to be found
         resp.headers.setdefault("Content-Security-Policy", CSP)
-        resp.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), "
-                                "publickey-credentials-get=(self), publickey-credentials-create=(self)")
+        resp.headers.setdefault(
+            "Permissions-Policy",
+            "camera=(), microphone=(), geolocation=(), payment=(), "
+            "publickey-credentials-get=(self), publickey-credentials-create=(self)",
+        )
         resp.headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
         if request.is_secure:
             resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
@@ -129,8 +151,15 @@ def create_app(config: dict | None = None) -> Flask:
         with lab.lock:
             lab.expire_pending()
             stats = lab.stats()
-        return render_template(template, active=active, missions=MISSIONS, stats=stats, done=lab.done,
-                               alerts=lab.alerts, **kw)
+        return render_template(
+            template,
+            active=active,
+            missions=MISSIONS,
+            stats=stats,
+            done=lab.done,
+            alerts=lab.alerts,
+            **kw,
+        )
 
     # ------------------------------------------------------------------ pages
     @app.get("/")
@@ -143,8 +172,16 @@ def create_app(config: dict | None = None) -> Flask:
         m = ROUTE_TO_MISSION.get(route)
         if m is None:
             abort(404)
-        return page("mission.html", route, m=m, mission=MISSIONS[m], brief=BRIEF[m],
-                    prev=MISSIONS.get(m - 1), next=MISSIONS.get(m + 1), pan=CARD_PAN)
+        return page(
+            "mission.html",
+            route,
+            m=m,
+            mission=MISSIONS[m],
+            brief=BRIEF[m],
+            prev=MISSIONS.get(m - 1),
+            next=MISSIONS.get(m + 1),
+            pan=CARD_PAN,
+        )
 
     @app.get("/store")
     @app.get("/online")
@@ -176,7 +213,9 @@ def create_app(config: dict | None = None) -> Flask:
     @app.post("/api/scan")
     def scan():
         data = request.get_json()
-        owner = data.get("finger") == "owner" if "finger" in data else bool(data.get("touch_id_match"))
+        owner = (
+            data.get("finger") == "owner" if "finger" in data else bool(data.get("touch_id_match"))
+        )
         with g.lab.lock:
             return jsonify(result=g.lab.scan(owner), state=g.lab.state())
 
@@ -191,8 +230,12 @@ def create_app(config: dict | None = None) -> Flask:
     def pay():
         data = request.get_json()
         with g.lab.lock:
-            res = g.lab.pay_online(str(data.get("pan", ""))[:32], str(data.get("cvv", "")).strip()[:8],
-                                   _amount(data, 249.99), _hour())
+            res = g.lab.pay_online(
+                str(data.get("pan", ""))[:32],
+                str(data.get("cvv", "")).strip()[:8],
+                _amount(data, 249.99),
+                _hour(),
+            )
             if "entry" in res:
                 res["entry"] = res["entry"].public()
             return jsonify({**res, "state": g.lab.state()})
@@ -214,10 +257,14 @@ def create_app(config: dict | None = None) -> Flask:
                 res = g.lab.attack_replay(hour)
                 res.pop("entry", None)
             elif kind == "testing":
-                res = dict(entries=[e.public() for e in g.lab.attack_card_testing(hour)])
+                res = {"entries": [e.public() for e in g.lab.attack_card_testing(hour)]}
             elif kind == "guess":
-                res = dict(tries=[dict(code=t["code"], status=t["status"], message=t["message"])
-                                  for t in g.lab.attack_guess(hour)])
+                res = {
+                    "tries": [
+                        {"code": t["code"], "status": t["status"], "message": t["message"]}
+                        for t in g.lab.attack_guess(hour)
+                    ]
+                }
             else:
                 abort(404)
             return jsonify({**res, "state": g.lab.state()})

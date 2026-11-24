@@ -23,6 +23,20 @@ jobs:
       - run: pip install -r requirements-bank.txt -r requirements-web.txt pytest
       - run: pytest -q
 
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # pinned so a new release can't change the rules without a commit
+      - run: pip install black==26.5.1 ruff==0.16.9
+      - run: black --check .
+      - run: ruff check .
+
   static-analysis:
     runs-on: ubuntu-latest
     steps:

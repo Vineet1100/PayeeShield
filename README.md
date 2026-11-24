@@ -104,7 +104,7 @@ pip install -r requirements-bank.txt pytest
 pytest
 ```
 
-On every push, GitHub Actions runs the tests, Bandit (insecure code), pip-audit (vulnerable dependencies) and gitleaks (leaked secrets in the full history). To report a vulnerability, see [SECURITY.md](SECURITY.md).
+On every push, GitHub Actions runs the tests, black and ruff (formatting and lint, settings in `pyproject.toml`), Bandit (insecure code), pip-audit (vulnerable dependencies) and gitleaks (leaked secrets in the full history). To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## Hosting the demo
 

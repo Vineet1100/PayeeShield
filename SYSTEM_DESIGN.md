@@ -165,6 +165,7 @@ The MCP server is the most interesting part to secure, because whatever an AI ag
 | Check | Tool | Runs |
 |---|---|---|
 | Test suite (every attack above) | pytest | every push and pull request |
+| Formatting and lint | black, ruff | every push and pull request |
 | Insecure code patterns | Bandit | every push and pull request |
 | Known vulnerable dependencies | pip-audit | every push and weekly |
 | Leaked secrets in the full history | gitleaks | every push and pull request |

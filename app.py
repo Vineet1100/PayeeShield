@@ -100,7 +100,7 @@ def touch_id_available() -> bool:
         context = LocalAuthentication.LAContext.new()
         ok, _error = context.canEvaluatePolicy_error_(_biometric_policy(), None)
         return bool(ok)
-    except Exception:
+    except Exception:  # noqa: BLE001 - any pyobjc failure just means no Touch ID
         return False
 
 
@@ -159,7 +159,7 @@ def send_mac_push(amount: float) -> tuple[str, str]:
         f"Merchant: {merchant}",
         f"Amount: ${amount:,.2f} CAD",
         f"Card ending {CARD_PAN[-4:]}",
-        f"Time: {datetime.now():%H:%M:%S}",
+        f"Time: {datetime.now().astimezone():%H:%M:%S}",
         "",
         "If you did not start this purchase, click Deny.",
     ]
@@ -177,6 +177,7 @@ return button returned of r
             capture_output=True,
             text=True,
             timeout=PUSH_TIMEOUT_SECONDS + 15,
+            check=False,  # a non-zero exit is handled below
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         return "error", f"could not show the prompt ({exc.__class__.__name__})"
@@ -300,11 +301,11 @@ def scan_fingerprint() -> None:
             return
         elif code == LA_BIOMETRY_LOCKOUT:
             ss.bio_locked_until = time.monotonic() + BIO_LOCKOUT_SECONDS
-            ss.last_bio_result = (
-                "locked",
+            msg = (
                 "macOS locked Touch ID after too many failed fingers. "
-                "Unlock your Mac with its password to re-enable it.",
+                "Unlock your Mac with its password to re-enable it."
             )
+            ss.last_bio_result = ("locked", msg)
             return
         elif code is None:
             msg = f"No fingerprint within {TOUCH_ID_TIMEOUT_SECONDS}s. Card stays locked."
@@ -331,11 +332,10 @@ def scan_fingerprint() -> None:
         if ss.bio_failures >= MAX_BIO_FAILURES:
             ss.bio_locked_until = now + BIO_LOCKOUT_SECONDS
             ss.bio_failures = 0
-            ss.last_bio_result = (
-                "locked",
-                f"No match ({detail}). Too many failures: "
-                f"sensor locked for {BIO_LOCKOUT_SECONDS}s.",
+            msg = (
+                f"No match ({detail}). Too many failures: sensor locked for {BIO_LOCKOUT_SECONDS}s."
             )
+            ss.last_bio_result = ("locked", msg)
         else:
             left = MAX_BIO_FAILURES - ss.bio_failures
             ss.last_bio_result = (
@@ -370,8 +370,9 @@ def luhn_valid(pan: str) -> bool:
 def record(
     channel: str, amount: float, pan: str, approved: bool, reason: str, security_block: bool = False
 ) -> dict:
+    now = datetime.now().astimezone()  # the cardholder's local clock
     entry = {
-        "Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Timestamp": now.strftime("%Y-%m-%d %H:%M:%S"),
         "Type": channel,
         "Amount": round(float(amount), 2),
         "Card ref": pan_token(pan),
@@ -379,9 +380,7 @@ def record(
         "Reason": reason,
         "Security block": security_block,
         # used by the anomaly model; the "3 AM" setting overrides it
-        "Hour": (
-            NIGHT_HOUR if st.session_state.get("demo_clock") == CLOCK_NIGHT else datetime.now().hour
-        ),
+        "Hour": NIGHT_HOUR if st.session_state.get("demo_clock") == CLOCK_NIGHT else now.hour,
     }
     st.session_state.ledger.append(entry)
     return entry
@@ -439,7 +438,9 @@ def authorize_online(pan_input: str, cvv_input: str, amount: float) -> dict:
     # only 1000 possible CVVs, so without a limit a bot could try them all in one window
     if now_mono < ss.online_blocked_until:
         wait = math.ceil(ss.online_blocked_until - now_mono)
-        return decline(f"Online payments blocked after {MAX_CVV_FAILURES} bad CVVs ({wait}s left)", True)
+        return decline(
+            f"Online payments blocked after {MAX_CVV_FAILURES} bad CVVs ({wait}s left)", True
+        )
 
     if not (cvv.isdigit() and len(cvv) == CVV_DIGITS):
         return decline(f"CVV must be {CVV_DIGITS} digits")
@@ -891,23 +892,36 @@ def detect_fraud(ledger: list[dict]) -> pd.DataFrame:
         group = group.assign(Blocks=rolling_count.to_numpy())
         # alert on the attempt that crosses the threshold
         for row in group[group["Blocks"] == BURST_THRESHOLD].itertuples():
-            alert("burst", row, "High",
-                  f"{BURST_THRESHOLD} blocked {row.Type.lower()} attempts in {BURST_WINDOW}",
-                  "Repeated failures in a short time suggest someone is testing or "
-                  "guessing your card details.")
+            alert(
+                "burst",
+                row,
+                "High",
+                f"{BURST_THRESHOLD} blocked {row.Type.lower()} attempts in {BURST_WINDOW}",
+                "Repeated failures in a short time suggest someone is testing or "
+                "guessing your card details.",
+            )
 
     # 2. expired CVV = old card data being reused
     for row in df[df["Reason"].str.contains("CVV expired", na=False)].itertuples():
-        alert("leaked", row, "High", f"Stolen card data used online (${row.Amount:,.2f})",
-              "Someone entered an old CVV, which usually means your card details "
-              "were leaked. Consider replacing the card.")
+        alert(
+            "leaked",
+            row,
+            "High",
+            f"Stolen card data used online (${row.Amount:,.2f})",
+            "Someone entered an old CVV, which usually means your card details "
+            "were leaked. Consider replacing the card.",
+        )
 
     # 3. cardholder denied the push
     for row in df[df["Reason"].str.contains("denied the push", na=False)].itertuples():
-        alert("rejected", row, "High",
-              f"Online purchase rejected at confirmation (${row.Amount:,.2f})",
-              "Someone had a valid CVV but could not confirm the purchase. "
-              "Your current CVV may have been phished.")
+        alert(
+            "rejected",
+            row,
+            "High",
+            f"Online purchase rejected at confirmation (${row.Amount:,.2f})",
+            "Someone had a valid CVV but could not confirm the purchase. "
+            "Your current CVV may have been phished.",
+        )
 
     # 4 and 5 only look at approved purchases
     approved = df[df["Approved"]].copy()
@@ -924,10 +938,14 @@ def detect_fraud(ledger: list[dict]) -> pd.DataFrame:
         typical = history.groupby("Type")["Amount"].median()
         outliers = approved["Z"] > ROBUST_Z_LIMIT
         for row in approved[outliers].itertuples():
-            alert("outlier", row, "Medium",
-                  f"Unusually large {row.Type.lower()} purchase (${row.Amount:,.2f})",
-                  f"Robust z-score {row.Z:.1f} (limit {ROBUST_Z_LIMIT}); your typical "
-                  f"{row.Type.lower()} purchase is about ${typical[row.Type]:,.0f}.")
+            alert(
+                "outlier",
+                row,
+                "Medium",
+                f"Unusually large {row.Type.lower()} purchase (${row.Amount:,.2f})",
+                f"Robust z-score {row.Z:.1f} (limit {ROBUST_Z_LIMIT}); your typical "
+                f"{row.Type.lower()} purchase is about ${typical[row.Type]:,.0f}.",
+            )
 
         # 5. LOF on amount + hour + channel (catches e.g. a normal purchase at 3 AM)
         model = anomaly_model()
@@ -936,10 +954,14 @@ def detect_fraud(ledger: list[dict]) -> pd.DataFrame:
             approved["Flag"] = model.predict(features)  # -1 = anomaly
             approved["Score"] = model.score_samples(features)
             for row in approved[(approved["Flag"] == -1) & ~outliers].itertuples():
-                alert("model", row, "Medium",
-                      f"Unusual {row.Type.lower()} purchase pattern (${row.Amount:,.2f} at {row.Hour}:00)",
-                      f"The ML model rates this amount, time and channel as unlike your "
-                      f"history (anomaly score {row.Score:.2f}). Check that it was you.")
+                alert(
+                    "model",
+                    row,
+                    "Medium",
+                    f"Unusual {row.Type.lower()} purchase pattern (${row.Amount:,.2f} at {row.Hour}:00)",
+                    f"The ML model rates this amount, time and channel as unlike your "
+                    f"history (anomaly score {row.Score:.2f}). Check that it was you.",
+                )
 
     if not alerts:
         return pd.DataFrame(columns=columns)
@@ -1099,7 +1121,9 @@ def bank_stats(alerts: pd.DataFrame) -> None:
 
 
 def page_head(title: str, lead: str) -> None:
-    html(f'<div class="nv-bank-head"><div><div class="nv-title">{title}</div><p>{lead}</p></div></div>')
+    html(
+        f'<div class="nv-bank-head"><div><div class="nv-title">{title}</div><p>{lead}</p></div></div>'
+    )
 
 
 def missing_extras_note() -> None:
@@ -1122,7 +1146,10 @@ def transaction_log() -> None:
             "Show", ["In-Store", "Online"], selection_mode="multi", default=["In-Store", "Online"]
         )
         outcome = st.segmented_control(
-            "Outcome", ["Approved", "Declined"], selection_mode="multi", default=["Approved", "Declined"]
+            "Outcome",
+            ["Approved", "Declined"],
+            selection_mode="multi",
+            default=["Approved", "Declined"],
         )
         shown = df[df["Type"].isin(channels or [])]
         keep = shown["Status"].str.endswith("APPROVED").map({True: "Approved", False: "Declined"})
@@ -1208,10 +1235,14 @@ protection).
 def demo_progress() -> list[tuple[str, bool]]:
     ledger = st.session_state.ledger
     return [
-        ("Pay in store with your fingerprint",
-         any(e["Type"] == "In-Store" and e["Status"].endswith("APPROVED") for e in ledger)),
-        ("Pay online with the live CVV and approve it",
-         any(e["Type"] == "Online" and e["Status"].endswith("APPROVED") for e in ledger)),
+        (
+            "Pay in store with your fingerprint",
+            any(e["Type"] == "In-Store" and e["Status"].endswith("APPROVED") for e in ledger),
+        ),
+        (
+            "Pay online with the live CVV and approve it",
+            any(e["Type"] == "Online" and e["Status"].endswith("APPROVED") for e in ledger),
+        ),
         ("Get a fraud attempt blocked", any(e["Security block"] for e in ledger)),
         ("Trigger a fraud alert", bool(st.session_state.alerted_keys)),
     ]
@@ -1243,16 +1274,38 @@ def main() -> None:
         st.markdown(f"#### Try it ({done} of {len(steps)} done)")
         st.progress(done / len(steps))
         for label, ok in steps:
-            st.markdown(f"{':material/check_circle:' if ok else ':material/radio_button_unchecked:'} {label}")
+            st.markdown(
+                f"{':material/check_circle:' if ok else ':material/radio_button_unchecked:'} {label}"
+            )
         st.markdown("#### Pages")
         c1, c2 = st.columns(2)
         with c1:
-            st.page_link(store_page, label="Pay in store: tap the card at Corner Market", icon=":material/contactless:")
-            st.page_link(online_page, label=f"Pay online: check out at {MERCHANT_NAME}", icon=":material/shopping_cart:")
-            st.page_link(alerts_page, label="Fraud alerts and spending profile", icon=":material/notification_important:")
+            st.page_link(
+                store_page,
+                label="Pay in store: tap the card at Corner Market",
+                icon=":material/contactless:",
+            )
+            st.page_link(
+                online_page,
+                label=f"Pay online: check out at {MERCHANT_NAME}",
+                icon=":material/shopping_cart:",
+            )
+            st.page_link(
+                alerts_page,
+                label="Fraud alerts and spending profile",
+                icon=":material/notification_important:",
+            )
         with c2:
-            st.page_link(log_page, label="Transaction log: every attempt, with CSV export", icon=":material/receipt_long:")
-            st.page_link(how_page, label="How it works: the security and the maths", icon=":material/menu_book:")
+            st.page_link(
+                log_page,
+                label="Transaction log: every attempt, with CSV export",
+                icon=":material/receipt_long:",
+            )
+            st.page_link(
+                how_page,
+                label="How it works: the security and the maths",
+                icon=":material/menu_book:",
+            )
 
     def pay_in_store() -> None:
         page_head(
@@ -1300,20 +1353,38 @@ def main() -> None:
         explainer()
 
     n_alerts = len(alerts)
-    home = st.Page(overview, title="Overview", icon=":material/home:", url_path="overview", default=True)
-    store_page = st.Page(pay_in_store, title="Pay in store", icon=":material/contactless:", url_path="pay-in-store")
-    online_page = st.Page(pay_online, title="Pay online", icon=":material/shopping_cart:", url_path="pay-online")
-    alerts_page = st.Page(fraud_alerts, title=f"Fraud alerts ({n_alerts})" if n_alerts else "Fraud alerts",
-                          icon=":material/notification_important:", url_path="fraud-alerts")
-    log_page = st.Page(log, title=f"Transaction log ({len(st.session_state.ledger)})",
-                       icon=":material/receipt_long:", url_path="transaction-log")
-    how_page = st.Page(how_it_works, title="How it works", icon=":material/menu_book:", url_path="how-it-works")
-    nav = st.navigation({
-        "": [home],
-        "Use the card": [store_page, online_page],
-        "Bank": [alerts_page, log_page],
-        "Learn": [how_page],
-    })
+    home = st.Page(
+        overview, title="Overview", icon=":material/home:", url_path="overview", default=True
+    )
+    store_page = st.Page(
+        pay_in_store, title="Pay in store", icon=":material/contactless:", url_path="pay-in-store"
+    )
+    online_page = st.Page(
+        pay_online, title="Pay online", icon=":material/shopping_cart:", url_path="pay-online"
+    )
+    alerts_page = st.Page(
+        fraud_alerts,
+        title=f"Fraud alerts ({n_alerts})" if n_alerts else "Fraud alerts",
+        icon=":material/notification_important:",
+        url_path="fraud-alerts",
+    )
+    log_page = st.Page(
+        log,
+        title=f"Transaction log ({len(st.session_state.ledger)})",
+        icon=":material/receipt_long:",
+        url_path="transaction-log",
+    )
+    how_page = st.Page(
+        how_it_works, title="How it works", icon=":material/menu_book:", url_path="how-it-works"
+    )
+    nav = st.navigation(
+        {
+            "": [home],
+            "Use the card": [store_page, online_page],
+            "Bank": [alerts_page, log_page],
+            "Learn": [how_page],
+        }
+    )
 
     with st.sidebar:
         security_settings()
