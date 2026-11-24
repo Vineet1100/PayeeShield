@@ -273,28 +273,23 @@
   }
 
   // ---------------------------------------------------------------- mission 03: attacks
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  document.querySelectorAll("[data-attack]").forEach((b) => b.onclick = async () => {
-    const kind = b.dataset.attack;
-    document.querySelectorAll("[data-attack]").forEach((x) => (x.disabled = true));
+  const ATTACKS = {
+    replay: ["Attacker replays leaked card details captured 4 minutes ago...", "Blocked. The stolen code expired, and the bank flagged the card as leaked.",
+      (res) => ["DECLINED", `Old CVV ${res.code}: ${res.message}`]],
+    testing: ["A thief has the card but not the owner's finger. Tapping three times...", "All three taps declined, and the monitor spotted the burst.",
+      (res) => [`${res.entries.length} x DECLINED`, "Every tap failed. The pattern triggered an alert."]],
+    guess: ["A bot starts guessing codes...", "Three misses and online payments pause for a minute. Guessing 1,000 codes is now impossible.",
+      (res) => ["3 WRONG GUESSES", res.tries.map((t) => t.code).join(", ") + ": " + res.tries.at(-1).message]],
+  };
+  const attackBtns = document.querySelectorAll("[data-attack]");
+  attackBtns.forEach((b) => b.onclick = async () => {
+    const [intro, outro, show] = ATTACKS[b.dataset.attack];
+    attackBtns.forEach((x) => (x.disabled = true));
     try {
-      if (kind === "replay") {
-        say("Attacker replays leaked card details captured 4 minutes ago..."); await sleep(700);
-        const res = await api("/api/attack/replay", { hour: hourNow() });
-        lcd($("atkLcd"), "bad", "DECLINED", `Old CVV ${res.code}: ${res.message}`);
-        say("Blocked. The stolen code expired, and the bank flagged the card as leaked."); setState(res.state);
-      } else if (kind === "testing") {
-        say("A thief has the card but not the owner's finger. Tapping three times..."); await sleep(700);
-        const res = await api("/api/attack/testing", { hour: hourNow() });
-        lcd($("atkLcd"), "bad", `${res.entries.length} x DECLINED`, "Every tap failed. The pattern triggered an alert.");
-        say("All three taps declined, and the monitor spotted the burst."); setState(res.state);
-      } else {
-        say("A bot starts guessing codes..."); await sleep(700);
-        const res = await api("/api/attack/guess", { hour: hourNow() });
-        lcd($("atkLcd"), "bad", "3 WRONG GUESSES", res.tries.map((t) => t.code).join(", ") + ": " + res.tries[res.tries.length - 1].message);
-        say("Three misses and online payments pause for a minute. Guessing 1,000 codes is now impossible."); setState(res.state);
-      }
-    } finally { document.querySelectorAll("[data-attack]").forEach((x) => (x.disabled = false)); }
+      say(intro); await new Promise((r) => setTimeout(r, 700));
+      const res = await api(`/api/attack/${b.dataset.attack}`, { hour: hourNow() });
+      lcd($("atkLcd"), "bad", ...show(res)); say(outro); setState(res.state);
+    } finally { attackBtns.forEach((x) => (x.disabled = false)); }
   });
 
   // ---------------------------------------------------------------- mission 04: fraud AI
@@ -314,9 +309,12 @@
     if (preset) refresh();
     return j;
   }
-  function updateAI(now) {
+  function showAI() {
     $("aiAmtV").textContent = fmt(ai.amount); $("aiHourV").textContent = String(ai.hour).padStart(2, "0") + ":00";
     drawChart();
+  }
+  function updateAI(now) {
+    showAI();
     clearTimeout(judgeTimer);
     if (now) judge(); else judgeTimer = setTimeout(judge, 120);
   }
@@ -380,7 +378,7 @@
     $("chOnline").onclick = () => { setAI(ai.amount, ai.hour, true); updateAI(true); };
     document.querySelectorAll("[data-preset]").forEach((b) => b.onclick = async () => {
       const [a, h, on] = b.dataset.preset.split(",").map(Number);
-      setAI(a, h, !!on); $("aiAmtV").textContent = fmt(a); $("aiHourV").textContent = String(h).padStart(2, "0") + ":00"; drawChart();
+      setAI(a, h, !!on); showAI();
       clearTimeout(judgeTimer);
       const j = await judge(true);
       say(j.flagged ? "Flagged. That purchase doesn't look like the owner." : "Looks normal. That's how the owner usually spends.");

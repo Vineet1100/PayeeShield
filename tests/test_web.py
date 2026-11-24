@@ -14,13 +14,13 @@ class Clock:
         return self.t
 
 
-@pytest.fixture()
+@pytest.fixture
 def client():
     app = create_app({"TESTING": True, "SECRET_KEY": "test"})
     return app.test_client()
 
 
-@pytest.fixture()
+@pytest.fixture
 def lab():
     return CardLab(clock=Clock())
 

@@ -3,18 +3,22 @@
 MISSIONS = {
     1: dict(route="store", name="Pay in store", title="Tap the card at a store",
             lead="First tap without scanning: it gets declined. Then hold the sensor, and tap again before the ring runs out.",
-            card="A stolen card is useless at a terminal. Unlock the chip with a fingerprint and tap."),
+            card="A stolen card is useless at a terminal. Unlock the chip with a fingerprint and tap.",
+            nova="tap first to see the decline, then hold the glowing sensor to unlock the card."),
     2: dict(route="online", name="Pay online", title="Buy something online",
             lead="Read the code off the card, pay, then approve the purchase with your fingerprint. "
                  "The code changes every 2 minutes, so an old one fails.",
-            card="The CVV changes every 2 minutes, and the owner approves each purchase."),
+            card="The CVV changes every 2 minutes, and the owner approves each purchase.",
+            nova="read the code off the card, pay, then approve the purchase."),
     3: dict(route="attack", name="Attack the card", title="Try to break in",
             lead="These are three ways criminals attack cards. Run each one and watch the bank block it and raise an alert.",
-            card="Replay leaked data, test a stolen card, guess the CVV. See every attack blocked."),
+            card="Replay leaked data, test a stolen card, guess the CVV. See every attack blocked.",
+            nova="pick an attack and watch the bank stop it."),
     4: dict(route="fraud-ai", name="Fraud AI", title="Ask the fraud AI",
             lead="The grey dots are the owner's last 400 purchases. Set up a new purchase and the model decides "
                  "whether it looks like them.",
-            card="Test purchases against a model that learned the owner's spending."),
+            card="Test purchases against a model that learned the owner's spending.",
+            nova="set up a purchase and ask the model if it looks like the owner."),
 }
 
 BRIEF = {

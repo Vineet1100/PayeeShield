@@ -68,8 +68,7 @@ class ScoreRequest(Strict):
 def _audit_logger(path: str) -> logging.Logger:
     logger = logging.getLogger(f"bank.audit.{path}")
     if not logger.handlers:
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)  # owner-only
-        os.close(fd)
+        os.close(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600))  # owner-only
         handler = logging.FileHandler(path)
         handler.setFormatter(logging.Formatter("%(message)s"))
         logger.addHandler(handler)
@@ -103,6 +102,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # card numbers are tokenized; CVVs, cryptograms and signatures are never logged
         record = {"ts": time.time(), "client": client, "endpoint": endpoint, **fields}
         audit.info(json.dumps(record, default=str))
+
+    def log_tx(client: Client, endpoint: str, code: str, tx) -> None:
+        log(
+            client.id,
+            endpoint,
+            card_ref=tx.card_ref,
+            merchant=tx.merchant_id,
+            amount=tx.amount,
+            code=code,
+            reason=tx.reason,
+        )
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
@@ -176,15 +186,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         code, tx = bank.authorize_in_store(
             req.pan, req.amount, req.merchant_id, req.atc, req.cryptogram
         )
-        log(
-            client.id,
-            "in-store",
-            card_ref=tx.card_ref,
-            merchant=req.merchant_id,
-            amount=req.amount,
-            code=code,
-            reason=tx.reason,
-        )
+        log_tx(client, "in-store", code, tx)
         return _result(code)
 
     @app.post("/v1/authorize/online")
@@ -207,15 +209,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "message": "waiting for cardholder approval",
                 "approval_id": approval.id,
             }
-        log(
-            client.id,
-            "online",
-            card_ref=tx.card_ref,
-            merchant=req.merchant_id,
-            amount=req.amount,
-            code=code,
-            reason=tx.reason,
-        )
+        log_tx(client, "online", code, tx)
         return _result(code)
 
     @app.get("/v1/approvals")
@@ -242,15 +236,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if result is None:
             raise HTTPException(404, "not found")
         code, tx = result
-        log(
-            client.id,
-            "approval",
-            card_ref=tx.card_ref,
-            merchant=tx.merchant_id,
-            amount=tx.amount,
-            code=code,
-            reason=tx.reason,
-        )
+        log_tx(client, "approval", code, tx)
         return _result(code)
 
     @app.post("/v1/fraud/score")

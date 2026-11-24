@@ -6,8 +6,6 @@ code: ``(n % 10**6) % 10**3 == n % 10**3``. The codes are the same as before, an
 works on every pyotp version.
 """
 
-from __future__ import annotations
-
 import datetime as dt
 
 import pyotp
@@ -22,12 +20,11 @@ class DynamicCVV:
         if not 1 <= digits <= _FULL_DIGITS:
             raise ValueError(f"digits must be between 1 and {_FULL_DIGITS}")
         self.digits = digits
-        self.interval = interval
         self._totp = pyotp.TOTP(secret, digits=_FULL_DIGITS, interval=interval)
 
-    def at(self, for_time: float | dt.datetime, counter_offset: int = 0) -> str:
+    def at(self, for_time: float | dt.datetime) -> str:
         """The code for a moment in time (unix seconds or a datetime)."""
-        return self._totp.at(for_time, counter_offset=counter_offset)[-self.digits :]
+        return self._totp.at(for_time)[-self.digits :]
 
     def now(self) -> str:
         """The code shown on the card right now."""

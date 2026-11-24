@@ -9,7 +9,6 @@ Run locally:   python -m web            (http://127.0.0.1:8000)
 Production:    gunicorn "web:create_app()" --workers 1 --threads 8
 Labs are kept in memory, so run a single worker process.
 """
-from __future__ import annotations
 
 import os
 import secrets
@@ -56,11 +55,11 @@ class RateLimiter:
             return True
 
 
-def _hour() -> int:
+def _hour(key: str = "hour") -> int:
     """The visitor's local hour, sent by the page, so the fraud model isn't fooled by the server's time zone."""
     data = request.get_json(silent=True) or {}
     try:
-        h = int(data.get("hour", 12))
+        h = int(data.get(key, 12))
     except (TypeError, ValueError):
         abort(400)
     if not 0 <= h <= 23:
@@ -228,12 +227,7 @@ def create_app(config: dict | None = None) -> Flask:
         data = request.get_json()
         amount = _amount(data, 42.5)
         online = bool(data.get("online"))
-        try:
-            hour = int(data.get("at_hour", 12))
-        except (TypeError, ValueError):
-            abort(400)
-        if not 0 <= hour <= 23:
-            abort(400)
+        hour = _hour("at_hour")
         with g.lab.lock:
             fn = g.lab.judge_preset if data.get("preset") else g.lab.judge
             return jsonify({**fn(amount, hour, online), "done": sorted(g.lab.done)})

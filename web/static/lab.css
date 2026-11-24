@@ -1,5 +1,5 @@
 :root{
-  --void:#04070D; --deck:#07101B; --panel:#0B1724; --panel-2:#0F1F30;
+  --void:#04070D;
   --line:rgba(94,231,255,.16); --line-strong:rgba(94,231,255,.38);
   --holo:#5EE7FF; --holo-dim:#2B6F80; --ink:#DDF7FF; --muted:#80A4B4;
   --gold:#F2B63D; --red:#FF4D5E; --green:#47F0A0; --amber:#FFC857;
@@ -232,6 +232,7 @@ input[type=range]{width:100%;accent-color:var(--holo)}
 .steps i.on{background:var(--holo)} .steps i.ok{background:var(--green)}
 .mnav{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;border-top:1px solid var(--line);padding:12px 16px}
 .mnav a{text-decoration:none}
+
 /* home */
 .hero{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:18px;align-items:stretch}
 .hero-copy{padding:22px 24px}
@@ -254,6 +255,7 @@ input[type=range]{width:100%;accent-color:var(--holo)}
 .mcard .go{font:600 .8rem/1 var(--f-display);letter-spacing:.06em;color:var(--holo);margin-top:4px}
 .mcard.isdone .go{color:var(--green)}
 .more{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+
 /* how it works */
 .how{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
 .how .brief{padding:16px}
@@ -261,11 +263,10 @@ input[type=range]{width:100%;accent-color:var(--holo)}
 .flow div{border:1px solid var(--line);border-radius:12px;padding:12px;background:rgba(4,7,13,.45);font-size:.9rem;color:var(--muted)}
 .flow b{display:block;font:600 .95rem/1.25 var(--f-display);color:var(--ink);margin-bottom:4px}
 .flow b::before{counter-increment:f;content:counter(f,decimal-leading-zero) "  ";font:500 .72rem/1 var(--f-mono);color:var(--gold)}
-.toast{cursor:pointer}
 
 /* toast */
 .toasts{position:fixed;right:max(16px,env(safe-area-inset-right,0px));top:calc(16px + env(safe-area-inset-top,0px));display:grid;gap:8px;z-index:20;width:min(340px,calc(100vw - 32px))}
-.toast{border:1px solid var(--red);background:rgba(20,6,9,.95);border-radius:12px;padding:10px 14px;box-shadow:0 10px 30px rgba(0,0,0,.6),0 0 24px -8px rgba(255,77,94,.6);animation:in .3s ease-out}
+.toast{cursor:pointer;border:1px solid var(--red);background:rgba(20,6,9,.95);border-radius:12px;padding:10px 14px;box-shadow:0 10px 30px rgba(0,0,0,.6),0 0 24px -8px rgba(255,77,94,.6);animation:in .3s ease-out}
 .toast small{font:600 .68rem/1 var(--f-mono);color:var(--red);letter-spacing:.1em}
 .toast div{font:600 .95rem/1.35 var(--f-display);margin-top:4px}
 @keyframes in{from{transform:translateY(-8px);opacity:0}}
@@ -275,11 +276,9 @@ input[type=range]{width:100%;accent-color:var(--holo)}
   .log li{grid-template-columns:62px 1fr auto}.log .ch{display:none}}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 
-/* Flask version additions */
-.page{display:grid;gap:18px}
-.stats5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr))}
+/* misc */
 .nf{padding:40px 24px;text-align:center}
 .nf h2{font:700 1.6rem/1.2 var(--f-display);margin:0 0 8px}
 .srv{font:500 .7rem/1 var(--f-mono);color:var(--muted)}
-.proto{position:sticky;top:0;z-index:50;background:#3a2a05;border-bottom:1px solid var(--gold);color:#ffe9b3;font:500 .82rem/1.4 var(--f-body,system-ui);padding:8px 16px;text-align:center}
+.proto{position:sticky;top:0;z-index:50;background:#3a2a05;border-bottom:1px solid var(--gold);color:#ffe9b3;font:500 .82rem/1.4 var(--f-body);padding:8px 16px;text-align:center}
 .proto b{font:700 .74rem/1 var(--f-mono);letter-spacing:.12em;color:var(--gold);margin-right:8px}

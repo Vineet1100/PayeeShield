@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ mission.name }}{% endblock %}
-{% block nova %}{% if m == 1 %}Mission 01: tap first to see the decline, then hold the glowing sensor to unlock the card.{% elif m == 2 %}Mission 02: read the code off the card, pay, then approve the purchase.{% elif m == 3 %}Mission 03: pick an attack and watch the bank stop it.{% else %}Mission 04: set up a purchase and ask the model if it looks like the owner.{% endif %}{% endblock %}
+{% block nova %}Mission 0{{ m }}: {{ mission.nova }}{% endblock %}
 {% block content %}
 <div class="main" data-mission="{{ m }}">
   <!-- card + sensor -->

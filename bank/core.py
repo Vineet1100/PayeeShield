@@ -67,8 +67,6 @@ class Bank:
     def __post_init__(self):
         self.ledger = Ledger(self.settings.ledger_path)
 
-    # --- helpers
-
     def card_ref(self, pan: str) -> str:
         return tokenize(self.settings.token_key, pan)
 
@@ -87,106 +85,59 @@ class Bank:
         self._monitor(self.ledger.add_transaction(tx), tx)
         return tx
 
-    def _totp(self) -> DynamicCVV:
-        return DynamicCVV(
-            self.settings.card_otp_secret, digits=3, interval=self.settings.cvv_step_seconds
-        )
-
-    # --- in store
-
     def authorize_in_store(self, pan, amount: Decimal, merchant_id, atc: int, cryptogram: str):
+        def decline(reason, block=True):
+            return DECLINED, self._record(
+                "in_store", pan, merchant_id, amount, False, reason, block
+            )
+
         with self._lock:
             if pan != self.settings.card_pan:
-                return DECLINED, self._record(
-                    "in_store", pan, merchant_id, amount, False, "unknown card"
-                )
+                return decline("unknown card", block=False)
             expected = card_cryptogram(
                 self.settings.card_key, pan, int(amount * 100), merchant_id, atc
             )
             if not hmac.compare_digest(expected, cryptogram):
-                return DECLINED, self._record(
-                    "in_store",
-                    pan,
-                    merchant_id,
-                    amount,
-                    False,
-                    "invalid cryptogram (chip locked or forged)",
-                    block=True,
-                )
+                return decline("invalid cryptogram (chip locked or forged)")
             if atc <= self._last_atc:
-                return DECLINED, self._record(
-                    "in_store",
-                    pan,
-                    merchant_id,
-                    amount,
-                    False,
-                    "replayed cryptogram (counter did not increase)",
-                    block=True,
-                )
+                return decline("replayed cryptogram (counter did not increase)")
             self._last_atc = atc
             return APPROVED, self._record(
                 "in_store", pan, merchant_id, amount, True, "chip cryptogram valid"
             )
 
-    # --- online
-
     def authorize_online(self, pan, cvv, amount: Decimal, merchant_id):
+        def decline(reason, block=True):
+            return (
+                DECLINED,
+                None,
+                self._record("online", pan, merchant_id, amount, False, reason, block),
+            )
+
         with self._lock:
             now = time.monotonic()
             if pan != self.settings.card_pan:
-                return (
-                    DECLINED,
-                    None,
-                    self._record("online", pan, merchant_id, amount, False, "unknown card"),
-                )
+                return decline("unknown card", block=False)
             if now < self._online_blocked_until:
-                return (
-                    DECLINED,
-                    None,
-                    self._record(
-                        "online",
-                        pan,
-                        merchant_id,
-                        amount,
-                        False,
-                        "online payments paused after repeated wrong CVVs",
-                        block=True,
-                    ),
-                )
+                return decline("online payments paused after repeated wrong CVVs")
 
-            totp = self._totp()
-            step = int(time.time() // self.settings.cvv_step_seconds)
-            if not hmac.compare_digest(cvv, totp.at(step * self.settings.cvv_step_seconds)):
+            interval = self.settings.cvv_step_seconds
+            totp = DynamicCVV(self.settings.card_otp_secret, digits=3, interval=interval)
+            step = int(time.time() // interval)
+            if not hmac.compare_digest(cvv, totp.at(step * interval)):
                 self._cvv_failures += 1
                 stale = any(
-                    hmac.compare_digest(cvv, totp.at((step - k) * self.settings.cvv_step_seconds))
-                    for k in range(1, 5)
+                    hmac.compare_digest(cvv, totp.at((step - k) * interval)) for k in range(1, 5)
                 )
                 reason = "expired CVV (likely leaked card data)" if stale else "incorrect CVV"
                 if self._cvv_failures >= MAX_CVV_FAILURES:
                     self._online_blocked_until = now + CVV_LOCKOUT_SECONDS
                     self._cvv_failures = 0
                     reason += "; online payments paused"
-                return (
-                    DECLINED,
-                    None,
-                    self._record("online", pan, merchant_id, amount, False, reason, block=True),
-                )
+                return decline(reason)
 
             if step in self._used_cvv_steps:
-                return (
-                    DECLINED,
-                    None,
-                    self._record(
-                        "online",
-                        pan,
-                        merchant_id,
-                        amount,
-                        False,
-                        "CVV already used (replay)",
-                        block=True,
-                    ),
-                )
+                return decline("CVV already used (replay)")
             self._used_cvv_steps = {s for s in self._used_cvv_steps if s >= step - 2} | {step}
             self._cvv_failures = 0
 
@@ -206,37 +157,24 @@ class Bank:
             approval = self._approvals.pop(approval_id, None)
             if approval is None:
                 return None
-            pan = self.settings.card_pan
-            if time.monotonic() > approval.expires_at:
-                return DECLINED, self._record(
-                    "online", pan, approval.merchant_id, approval.amount, False, "approval expired"
+
+            def record(approved, reason, block=False):
+                pan, merchant, amount = (
+                    self.settings.card_pan,
+                    approval.merchant_id,
+                    approval.amount,
                 )
+                tx = self._record("online", pan, merchant, amount, approved, reason, block)
+                return (APPROVED if approved else DECLINED), tx
+
+            if time.monotonic() > approval.expires_at:
+                return record(False, "approval expired")
             expected = approval_signature(self.settings.device_key, approval_id, decision)
             if not hmac.compare_digest(expected, signature):
-                return DECLINED, self._record(
-                    "online",
-                    pan,
-                    approval.merchant_id,
-                    approval.amount,
-                    False,
-                    "approval not signed by the cardholder's device",
-                    block=True,
-                )
+                return record(False, "approval not signed by the cardholder's device", block=True)
             if decision == "deny":
-                return DECLINED, self._record(
-                    "online",
-                    pan,
-                    approval.merchant_id,
-                    approval.amount,
-                    False,
-                    "cardholder denied the purchase",
-                    block=True,
-                )
-            return APPROVED, self._record(
-                "online", pan, approval.merchant_id, approval.amount, True, "approved by cardholder"
-            )
-
-    # --- fraud monitor
+                return record(False, "cardholder denied the purchase", block=True)
+            return record(True, "approved by cardholder")
 
     def _monitor(self, tx_id: int, tx: Transaction) -> None:
         if tx.security_block:

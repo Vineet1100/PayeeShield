@@ -30,8 +30,7 @@ READ_ONLY = ToolAnnotations(read_only_hint=True, destructive_hint=False, open_wo
 INSTRUCTIONS = (
     "Read-only fraud tools for the biometric card bank. Use them to check whether a "
     "purchase looks like the cardholder, review fraud alerts, see payment totals and run "
-    "analytics reports. "
-    "They cannot move money or reveal card numbers, CVVs or keys."
+    "analytics reports. They cannot move money or reveal card numbers, CVVs or keys."
 )
 
 

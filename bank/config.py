@@ -7,7 +7,7 @@ Generate a fresh set with:  python -m bank.keys > .env
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 MIN_KEY_BYTES = 32
 
@@ -40,7 +40,7 @@ class Settings:
     card_key: bytes  # signs in-store cryptograms on the card
     device_key: bytes  # signs purchase approvals on the cardholder's device
     token_key: bytes  # tokenizes card numbers in logs
-    clients: dict[str, Client] = field(repr=False)
+    clients: dict[str, Client]
     cvv_step_seconds: int = 120
     max_clock_skew_seconds: int = 300
     requests_per_minute: int = 60

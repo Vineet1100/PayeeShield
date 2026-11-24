@@ -192,53 +192,28 @@ def verify_push_approval(amount: float) -> tuple[bool, str]:
     # a click could come from anyone at the laptop, so ask for Touch ID too
     if not touch_id_available():
         return True, "approved"
-    ok, _code = touch_id_authenticate(f"approve ${amount:,.2f} at {MERCHANT_NAME}")
-    return (
-        (True, "approved with Touch ID") if ok else (False, "Touch ID check on the approval failed")
-    )
+    if touch_id_authenticate(f"approve ${amount:,.2f} at {MERCHANT_NAME}")[0]:
+        return True, "approved with Touch ID"
+    return False, "Touch ID check on the approval failed"
 
 
 def finish_push(decision: str, detail: str = "") -> dict:
     ss = st.session_state
-    pending = ss.pending_push
-    ss.pending_push = None
-    amount, pan = pending["amount"], pending["pan"]
-
+    pending, ss.pending_push = ss.pending_push, None
+    ok, block = False, decision == "deny"
     if decision == "approve":
-        ok, how = (
-            verify_push_approval(amount)
-            if pending["channel"] == PUSH_CHANNEL_MAC
-            else (True, "approved")
-        )
-        if ok:
-            entry = record(
-                "Online", amount, pan, True, f"Dynamic CVV valid; push {how} by cardholder"
-            )
-        else:
-            entry = record("Online", amount, pan, False, how, security_block=True)
+        mac = pending["channel"] == PUSH_CHANNEL_MAC
+        ok, how = verify_push_approval(pending["amount"]) if mac else (True, "approved")
+        reason = f"Dynamic CVV valid; push {how} by cardholder" if ok else how
+        block = not ok
     elif decision == "deny":
-        entry = record(
-            "Online",
-            amount,
-            pan,
-            False,
-            "Cardholder denied the push: purchase not recognised (fraud)",
-            security_block=True,
-        )
+        reason = "Cardholder denied the push: purchase not recognised (fraud)"
     elif decision == "timeout":
-        entry = record(
-            "Online", amount, pan, False, f"No answer to the push within {PUSH_TIMEOUT_SECONDS}s"
-        )
+        reason = f"No answer to the push within {PUSH_TIMEOUT_SECONDS}s"
     else:
-        entry = record(
-            "Online",
-            amount,
-            pan,
-            False,
-            f"Could not reach the cardholder's device ({detail}); declined to be safe",
-        )
-    ss.online_result = entry
-    return entry
+        reason = f"Could not reach the cardholder's device ({detail}); declined to be safe"
+    ss.online_result = record("Online", pending["amount"], pending["pan"], ok, reason, block)
+    return ss.online_result
 
 
 # --- State management ---
@@ -250,10 +225,7 @@ def init_state() -> None:
         return
 
     # card and bank share one secret and each work out the CVV from it + the time
-    shared_secret = pyotp.random_base32()
-    ss.card_secret = shared_secret
-    ss.bank_secret = shared_secret
-
+    ss.card_secret = ss.bank_secret = pyotp.random_base32()
     ss.token_key = secrets.token_bytes(32)
 
     # monotonic clock so changing the system time can't stretch the unlock window
@@ -334,11 +306,9 @@ def scan_fingerprint() -> None:
                 "Unlock your Mac with its password to re-enable it.",
             )
             return
-        elif code is None and not ok:
-            ss.last_bio_result = (
-                "no_match",
-                "No fingerprint within " f"{TOUCH_ID_TIMEOUT_SECONDS}s. Card stays locked.",
-            )
+        elif code is None:
+            msg = f"No fingerprint within {TOUCH_ID_TIMEOUT_SECONDS}s. Card stays locked."
+            ss.last_bio_result = ("no_match", msg)
             return
         else:
             detail = "Touch ID did not recognise that finger"
@@ -451,78 +421,64 @@ def authorize_online(pan_input: str, cvv_input: str, amount: float) -> dict:
     cvv = cvv_input.strip()
     now_mono = time.monotonic()
 
+    def decline(reason, block=False):
+        return record("Online", amount, pan, False, reason, security_block=block)
+
+    def pending(reason):
+        return {"Status": "PENDING", "Amount": round(float(amount), 2), "Reason": reason}
+
     if ss.pending_push:
-        return {
-            "Status": "PENDING",
-            "Amount": round(float(amount), 2),
-            "Reason": "Another payment is waiting to be confirmed. Finish or cancel it first.",
-        }
+        return pending("Another payment is waiting to be confirmed. Finish or cancel it first.")
     if amount <= 0:
-        return record("Online", amount, pan, False, "Invalid amount")
+        return decline("Invalid amount")
     if not luhn_valid(pan):
-        return record("Online", amount, pan, False, "Invalid card number (failed Luhn check)")
+        return decline("Invalid card number (failed Luhn check)")
     if pan != CARD_PAN:
-        return record("Online", amount, pan, False, "Card not issued by this bank")
+        return decline("Card not issued by this bank")
 
     # only 1000 possible CVVs, so without a limit a bot could try them all in one window
     if now_mono < ss.online_blocked_until:
         wait = math.ceil(ss.online_blocked_until - now_mono)
-        return record(
-            "Online",
-            amount,
-            pan,
-            False,
-            f"Online payments blocked after {MAX_CVV_FAILURES} bad CVVs ({wait}s left)",
-            security_block=True,
-        )
+        return decline(f"Online payments blocked after {MAX_CVV_FAILURES} bad CVVs ({wait}s left)", True)
 
     if not (cvv.isdigit() and len(cvv) == CVV_DIGITS):
-        return record("Online", amount, pan, False, f"CVV must be {CVV_DIGITS} digits")
+        return decline(f"CVV must be {CVV_DIGITS} digits")
 
     bank_totp = DynamicCVV(ss.bank_secret, digits=CVV_DIGITS, interval=CVV_STEP_SECONDS)
-    now = time.time()
-    current_step = int(now // CVV_STEP_SECONDS)
+    current_step = int(time.time() // CVV_STEP_SECONDS)
+
+    def matches(step):  # constant-time compare
+        return hmac.compare_digest(cvv, bank_totp.at(step * CVV_STEP_SECONDS))
 
     # drift grace also accepts the previous window, in case it changed mid-typing
     accepted_steps = [current_step, current_step - 1] if ss.drift_grace else [current_step]
-    matched_step = None
-    for step in accepted_steps:
-        # constant-time compare
-        if hmac.compare_digest(cvv, bank_totp.at(step * CVV_STEP_SECONDS)):
-            matched_step = step
-            break
+    matched_step = next((s for s in accepted_steps if matches(s)), None)
 
     if matched_step is None:
         ss.cvv_failures += 1
         # just for the log message - a random guess can occasionally match an old window too
         stale = any(
-            hmac.compare_digest(cvv, bank_totp.at((current_step - k) * CVV_STEP_SECONDS))
+            matches(current_step - k)
             for k in range(1, STALE_LOOKBACK_STEPS + 1)
-            if (current_step - k) not in accepted_steps
+            if current_step - k not in accepted_steps
         )
         window = f"{CVV_STEP_SECONDS // 60}-minute window"
-        if stale:
-            reason = f"CVV expired: matches an earlier {window} (likely leaked card data)"
-        else:
-            reason = "Incorrect CVV"
+        reason = (
+            f"CVV expired: matches an earlier {window} (likely leaked card data)"
+            if stale
+            else "Incorrect CVV"
+        )
         if ss.cvv_failures >= MAX_CVV_FAILURES:
             ss.online_blocked_until = now_mono + CVV_LOCKOUT_SECONDS
             ss.cvv_failures = 0
             reason += f"; online payments blocked for {CVV_LOCKOUT_SECONDS}s"
-        return record("Online", amount, pan, False, reason, security_block=True)
+        return decline(reason, True)
 
     # replay protection (RFC 6238 5.2): a code that already went through can't be reused
     ss.used_cvv_steps = {s for s in ss.used_cvv_steps if s >= current_step - 2}
     if ss.replay_protection and matched_step in ss.used_cvv_steps:
         ss.cvv_failures += 1
-        return record(
-            "Online",
-            amount,
-            pan,
-            False,
-            "CVV already used in this window (replay blocked)",
-            security_block=True,
-        )
+        return decline("CVV already used in this window (replay blocked)", True)
 
     # burn the code now, even if the push gets denied later
     ss.used_cvv_steps.add(matched_step)
@@ -542,11 +498,7 @@ def authorize_online(pan_input: str, cvv_input: str, amount: float) -> dict:
         decision, detail = send_mac_push(amount)  # blocks until answered
         return finish_push(decision, detail)
     # otherwise the request shows on the page and the buttons call finish_push()
-    return {
-        "Status": "PENDING",
-        "Amount": round(float(amount), 2),
-        "Reason": "CVV valid. Approve or deny the request under the fingerprint sensor.",
-    }
+    return pending("CVV valid. Approve or deny the request under the fingerprint sensor.")
 
 
 # --- Checkout helpers ---
@@ -621,12 +573,8 @@ def ring_html(remaining: float, sensor_blocked: bool, lockout_left: float) -> st
     if sensor_blocked:
         frac, color, big, small = 1.0, "var(--stop)", f"{math.ceil(lockout_left)}", "s lockout"
     elif remaining > 0:
-        frac, color, big, small = (
-            remaining / UNLOCK_WINDOW_SECONDS,
-            "var(--go)",
-            f"{math.ceil(remaining)}",
-            "s to pay",
-        )
+        frac, color = remaining / UNLOCK_WINDOW_SECONDS, "var(--go)"
+        big, small = f"{math.ceil(remaining)}", "s to pay"
     else:
         frac, color, big, small = 0.0, "var(--brass)", "—", "locked"
     dash = circumference * frac
@@ -779,10 +727,9 @@ def lcd_html(entry) -> str:
             '<div class="sub">Unlock the card with your fingerprint first.</div></div>'
         )
     approved = entry["Status"].endswith("APPROVED")
-    word = "APPROVED" if approved else "DECLINED"
     return (
         f'<div class="nv-lcd {"" if approved else "declined"}">'
-        f'<div class="big">{word} ${entry["Amount"]:,.2f}</div>'
+        f'<div class="big">{"APPROVED" if approved else "DECLINED"} ${entry["Amount"]:,.2f}</div>'
         f'<div class="sub">{entry["Reason"]}</div></div>'
     )
 
@@ -934,6 +881,9 @@ def detect_fraud(ledger: list[dict]) -> pd.DataFrame:
     df["Approved"] = df["Status"].str.endswith("APPROVED")
     alerts = []
 
+    def alert(kind, row, severity, title, details):
+        alerts.append(dict(zip(columns, (f"{kind}-{row.Txn}", row.Time, severity, title, details))))
+
     # 1. bursts - rolling count of blocked attempts per channel
     blocks = df[df["Security block"]]
     for _, group in blocks.groupby("Type"):
@@ -941,44 +891,23 @@ def detect_fraud(ledger: list[dict]) -> pd.DataFrame:
         group = group.assign(Blocks=rolling_count.to_numpy())
         # alert on the attempt that crosses the threshold
         for row in group[group["Blocks"] == BURST_THRESHOLD].itertuples():
-            alerts.append(
-                {
-                    "Key": f"burst-{row.Txn}",
-                    "Time": row.Time,
-                    "Severity": "High",
-                    "Alert": f"{BURST_THRESHOLD} blocked {row.Type.lower()} attempts in {BURST_WINDOW}",
-                    "Details": "Repeated failures in a short time suggest someone is testing or "
-                    "guessing your card details.",
-                }
-            )
+            alert("burst", row, "High",
+                  f"{BURST_THRESHOLD} blocked {row.Type.lower()} attempts in {BURST_WINDOW}",
+                  "Repeated failures in a short time suggest someone is testing or "
+                  "guessing your card details.")
 
     # 2. expired CVV = old card data being reused
-    leaked = df[df["Reason"].str.contains("CVV expired", na=False)]
-    for row in leaked.itertuples():
-        alerts.append(
-            {
-                "Key": f"leaked-{row.Txn}",
-                "Time": row.Time,
-                "Severity": "High",
-                "Alert": f"Stolen card data used online (${row.Amount:,.2f})",
-                "Details": "Someone entered an old CVV, which usually means your card details "
-                "were leaked. Consider replacing the card.",
-            }
-        )
+    for row in df[df["Reason"].str.contains("CVV expired", na=False)].itertuples():
+        alert("leaked", row, "High", f"Stolen card data used online (${row.Amount:,.2f})",
+              "Someone entered an old CVV, which usually means your card details "
+              "were leaked. Consider replacing the card.")
 
     # 3. cardholder denied the push
-    rejected = df[df["Reason"].str.contains("denied the push", na=False)]
-    for row in rejected.itertuples():
-        alerts.append(
-            {
-                "Key": f"rejected-{row.Txn}",
-                "Time": row.Time,
-                "Severity": "High",
-                "Alert": f"Online purchase rejected at confirmation (${row.Amount:,.2f})",
-                "Details": "Someone had a valid CVV but could not confirm the purchase. "
-                "Your current CVV may have been phished.",
-            }
-        )
+    for row in df[df["Reason"].str.contains("denied the push", na=False)].itertuples():
+        alert("rejected", row, "High",
+              f"Online purchase rejected at confirmation (${row.Amount:,.2f})",
+              "Someone had a valid CVV but could not confirm the purchase. "
+              "Your current CVV may have been phished.")
 
     # 4 and 5 only look at approved purchases
     approved = df[df["Approved"]].copy()
@@ -993,37 +922,24 @@ def detect_fraud(ledger: list[dict]) -> pd.DataFrame:
                 np.log1p(approved.loc[idx, "Amount"].to_numpy()), baseline
             )
         typical = history.groupby("Type")["Amount"].median()
-        for row in approved[approved["Z"] > ROBUST_Z_LIMIT].itertuples():
-            alerts.append(
-                {
-                    "Key": f"outlier-{row.Txn}",
-                    "Time": row.Time,
-                    "Severity": "Medium",
-                    "Alert": f"Unusually large {row.Type.lower()} purchase (${row.Amount:,.2f})",
-                    "Details": f"Robust z-score {row.Z:.1f} (limit {ROBUST_Z_LIMIT}); your typical "
-                    f"{row.Type.lower()} purchase is about ${typical[row.Type]:,.0f}.",
-                }
-            )
+        outliers = approved["Z"] > ROBUST_Z_LIMIT
+        for row in approved[outliers].itertuples():
+            alert("outlier", row, "Medium",
+                  f"Unusually large {row.Type.lower()} purchase (${row.Amount:,.2f})",
+                  f"Robust z-score {row.Z:.1f} (limit {ROBUST_Z_LIMIT}); your typical "
+                  f"{row.Type.lower()} purchase is about ${typical[row.Type]:,.0f}.")
 
         # 5. LOF on amount + hour + channel (catches e.g. a normal purchase at 3 AM)
         model = anomaly_model()
         if model is not None:
-            approved["Flag"] = model.predict(model_features(approved))  # -1 = anomaly
-            approved["Score"] = model.score_samples(model_features(approved))
-            already = set(approved.loc[approved["Z"] > ROBUST_Z_LIMIT, "Txn"])
-            for row in approved[
-                (approved["Flag"] == -1) & ~approved["Txn"].isin(already)
-            ].itertuples():
-                alerts.append(
-                    {
-                        "Key": f"model-{row.Txn}",
-                        "Time": row.Time,
-                        "Severity": "Medium",
-                        "Alert": f"Unusual {row.Type.lower()} purchase pattern (${row.Amount:,.2f} at {row.Hour}:00)",
-                        "Details": f"The ML model rates this amount, time and channel as unlike your "
-                        f"history (anomaly score {row.Score:.2f}). Check that it was you.",
-                    }
-                )
+            features = model_features(approved)
+            approved["Flag"] = model.predict(features)  # -1 = anomaly
+            approved["Score"] = model.score_samples(features)
+            for row in approved[(approved["Flag"] == -1) & ~outliers].itertuples():
+                alert("model", row, "Medium",
+                      f"Unusual {row.Type.lower()} purchase pattern (${row.Amount:,.2f} at {row.Hour}:00)",
+                      f"The ML model rates this amount, time and channel as unlike your "
+                      f"history (anomaly score {row.Score:.2f}). Check that it was you.")
 
     if not alerts:
         return pd.DataFrame(columns=columns)
@@ -1157,14 +1073,12 @@ def alerts_html(alerts: pd.DataFrame) -> str:
             '<div class="nv-empty">No suspicious patterns yet. Try tapping the card three times '
             "without a fingerprint, or paying with leaked card data.</div>"
         )
-    rows = []
-    for row in alerts.itertuples():
-        rows.append(
-            f'<div class="nv-alert"><span class="nv-sev {row.Severity}"><i></i>{row.Severity}</span>'
-            f"<div><b>{row.Alert}</b><p>{row.Details}</p></div>"
-            f"<time>{row.Time:%H:%M:%S}</time></div>"
-        )
-    return "".join(rows)
+    return "".join(
+        f'<div class="nv-alert"><span class="nv-sev {row.Severity}"><i></i>{row.Severity}</span>'
+        f"<div><b>{row.Alert}</b><p>{row.Details}</p></div>"
+        f"<time>{row.Time:%H:%M:%S}</time></div>"
+        for row in alerts.itertuples()
+    )
 
 
 def bank_stats(alerts: pd.DataFrame) -> None:

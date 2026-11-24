@@ -16,9 +16,7 @@ Streamlit app (``app.py``) and the bank API (``bank/``):
 Payment attempts are kept in an in-memory SQLite ledger, the same ``bank.ledger.Ledger``
 the bank API uses, so the bank page can show the analytics SQL from ``queries/``.
 """
-from __future__ import annotations
 
-import random
 import secrets
 import threading
 import time
@@ -48,7 +46,6 @@ CARD_REF = "tok_demo"  # the ledger stores a token, never the card number
 LEDGER_CHANNELS = {"In-Store": "in_store", "Online": "online"}
 PAGE_CHANNELS = {v: k for k, v in LEDGER_CHANNELS.items()}
 MERCHANTS = {"In-Store": "corner-market", "Online": "northwind-electronics"}
-MISSIONS = (1, 2, 3, 4)
 
 
 @dataclass
@@ -102,8 +99,8 @@ class CardLab:
         self.lock = threading.Lock()
 
     # ------------------------------------------------------------------ card
-    def step(self, at: float | None = None) -> int:
-        return int((self.clock() if at is None else at) // CVV_STEP_SECONDS)
+    def step(self) -> int:
+        return int(self.clock() // CVV_STEP_SECONDS)
 
     def code_at(self, step: int) -> str:
         return self.totp.at(step * CVV_STEP_SECONDS)
@@ -223,13 +220,12 @@ class CardLab:
         self.done.add(3)
         return [self.tap(9.99 + i, hour) for i in range(3)]
 
-    def attack_guess(self, hour: int, rng: random.Random | None = None) -> list[dict]:
-        rng = rng or random.SystemRandom()
+    def attack_guess(self, hour: int) -> list[dict]:
         real, out = self.cvv_now(), []
         for _ in range(3):
             g = real
             while g == real:
-                g = f"{rng.randrange(1000):03d}"
+                g = f"{secrets.randbelow(1000):03d}"
             out.append(dict(code=g, **self.pay_online(CARD_PAN, g, 19.99, hour)))
         self.done.add(3)
         return out
@@ -292,7 +288,7 @@ class CardLab:
         """The analytics SQL in queries/, run on this visitor's ledger."""
         return {name: self.db.report(name) for name in REPORTS}
 
-    def state(self, since_alert: int = 0) -> dict:
+    def state(self) -> dict:
         self.expire_pending()
         now = self.clock()
         return dict(

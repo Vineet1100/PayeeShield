@@ -57,23 +57,22 @@ class RateLimiter:
         self._buckets: dict[str, tuple[float, float]] = {}
         self._lock = threading.Lock()
 
+    def _tokens(self, key: str, now: float) -> float:
+        tokens, last = self._buckets.get(key, (self.capacity, now))
+        return min(self.capacity, tokens + (now - last) * self.rate)
+
     def blocked(self, key: str) -> bool:
         """True if the bucket is empty, without using a token."""
-        now = time.monotonic()
         with self._lock:
-            tokens, last = self._buckets.get(key, (self.capacity, now))
-            return min(self.capacity, tokens + (now - last) * self.rate) < 1
+            return self._tokens(key, time.monotonic()) < 1
 
     def allow(self, key: str) -> bool:
         now = time.monotonic()
         with self._lock:
-            tokens, last = self._buckets.get(key, (self.capacity, now))
-            tokens = min(self.capacity, tokens + (now - last) * self.rate)
-            if tokens < 1:
-                self._buckets[key] = (tokens, now)
-                return False
-            self._buckets[key] = (tokens - 1, now)
-            return True
+            tokens = self._tokens(key, now)
+            allowed = tokens >= 1
+            self._buckets[key] = (tokens - 1 if allowed else tokens, now)
+            return allowed
 
 
 def tokenize(key: bytes, value: str) -> str:

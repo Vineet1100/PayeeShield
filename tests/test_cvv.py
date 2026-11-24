@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import struct
+import time
 
 import pyotp
 import pytest
@@ -34,9 +35,7 @@ def test_codes_are_three_digits_with_leading_zeros_kept():
     assert any(c.startswith("0") for c in codes)
 
 
-def test_code_changes_each_window_and_now_matches_at():
-    import time
-
+def test_now_matches_at():
     cvv = DynamicCVV(pyotp.random_base32(), digits=3, interval=120)
     assert cvv.now() in {cvv.at(time.time()), cvv.at(time.time() - 1)}
 
