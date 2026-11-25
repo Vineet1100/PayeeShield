@@ -30,6 +30,30 @@ New alerts show up in the app and as a macOS notification. There's also a Plotly
 
 On the model: I started with Isolation Forest, but on five out-of-pattern test purchases it caught 2 and LOF caught all 5. The history has no night-time purchases, and tree splits only cover the range seen in training, so the forest couldn't tell that 3 AM was unusual.
 
+### Model evaluation
+
+To check that choice on more than five purchases, `bank/evaluation.py` builds a labelled test set: 1,000 normal purchases drawn from the same distribution as the history (with a different seed) plus 50 of each fraud pattern: large amounts (8 to 25 times normal), normal amounts at night (midnight to 5 AM), card testing ($0.50 to $3 online) and large amounts at night. Each detector is trained on the same 400-purchase history and scored on the whole set:
+
+```bash
+python -m bank.evaluation
+```
+
+| Detector | Precision | Recall | False-positive rate | Recall: large amount | Recall: night-time | Recall: card testing | Recall: large at night |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Robust z-score | 99% | 45% | 0.1% | 90% | 0% | 0% | 90% |
+| Local Outlier Factor | 94% | 94% | 1.1% | 94% | 80% | 100% | 100% |
+| Isolation Forest | 95% | 78% | 0.9% | 96% | 16% | 100% | 100% |
+| Bank (z-score or LOF) | 94% | 94% | 1.1% | 94% | 80% | 100% | 100% |
+
+What it shows:
+
+- The robust z-score almost never raises a false alarm, but it only looks at the amount, so it misses every night-time and card-testing purchase.
+- Isolation Forest misses most night-time fraud, for the reason above.
+- LOF catches 94% of the fraud while flagging about 1 in 100 good purchases, close to the 1% contamination it was set to.
+- On this set the z-score adds nothing on top of LOF, but it stays in the bank because it gives an analyst a plain reason ("amount far outside normal spending").
+
+Precision here is measured with 1 fraud in every 6 purchases. Real fraud is far rarer, so with the same 1.1% false-positive rate most alerts on real traffic would be false alarms. The threshold A/B test on the roadmap looks at that trade-off next.
+
 ## Running it
 
 Needs Python 3.10+.
@@ -142,7 +166,8 @@ On the free plan the app goes to sleep after 15 minutes without visitors, so the
 app.py, style.css        Streamlit app (card, merchants, bank in one process)
 web/                     Flask demo: pages, JSON API and per-visitor card and bank
 render.yaml              Render hosting setup
-bank/                    bank API: signing, authorization, fraud monitor, SQLite ledger, audit log
+bank/                    bank API: signing, authorization, fraud monitor, SQLite ledger, audit log,
+                         detector evaluation (python -m bank.evaluation)
 queries/                 analytics SQL over the ledger
 mcp_server/              read-only MCP server for AI agents
 tests/                   attack and payment-flow tests

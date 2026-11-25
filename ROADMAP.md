@@ -4,7 +4,6 @@ One improvement at a time, top of the list first. Finished items move to **Done*
 
 ## Up next
 
-- [ ] **Model evaluation report.** Build a labelled synthetic test set (normal purchases plus injected fraud patterns) and compare the robust z-score, Local Outlier Factor and Isolation Forest on precision, recall and false-positive rate. Publish the table in the README.
 - [ ] **Threshold A/B test.** Simulate two fraud-alert thresholds on the same traffic and compare fraud caught against good customers wrongly flagged, with a significance test on the difference.
 - [ ] **Metrics page in the live demo.** Approval rate over time, blocked attempts by reason and alerts by severity, as charts on the bank page.
 - [ ] **Explain each alert.** Show which features (amount, hour, channel) pushed a purchase over the line, so an analyst can see why it was flagged.
@@ -20,6 +19,7 @@ One improvement at a time, top of the list first. Finished items move to **Done*
 
 ## Done
 
+- 2026-11-25: Added a labelled test set that compares the robust z-score, Local Outlier Factor and Isolation Forest on precision, recall and false-positive rate, with the results table in the README.
 - 2026-11-24: The whole codebase now passes black and ruff, with shared settings in `pyproject.toml` and a lint job in CI.
 - 2026-11-23: The live demo keeps each visitor's payments in an in-memory SQLite ledger and shows the `queries/` analytics on the bank server page.
 - 2026-11-22: The bank API serves the analytics SQL as read-only `/v1/reports/{name}` JSON, and the MCP server has a matching `get_ledger_report` tool.

@@ -23,18 +23,23 @@ class Score:
     reason: str
 
 
-@lru_cache(maxsize=1)
-def _history() -> dict[str, np.ndarray]:
-    # simulated spending history: log-normal amounts, fixed seed so results repeat
-    rng = np.random.default_rng(42)
-    online = rng.random(HISTORY_SIZE) < 0.4
+def simulate_purchases(n: int, seed: int) -> dict[str, np.ndarray]:
+    """Normal spending: log-normal amounts, daytime hours, 40% online."""
+    rng = np.random.default_rng(seed)
+    online = rng.random(n) < 0.4
     amount = np.where(
         online,
-        rng.lognormal(np.log(60), 0.6, HISTORY_SIZE),
-        rng.lognormal(np.log(30), 0.5, HISTORY_SIZE),
+        rng.lognormal(np.log(60), 0.6, n),
+        rng.lognormal(np.log(30), 0.5, n),
     )
-    hour = np.where(online, rng.normal(17, 3.5, HISTORY_SIZE), rng.normal(14, 3.0, HISTORY_SIZE))
+    hour = np.where(online, rng.normal(17, 3.5, n), rng.normal(14, 3.0, n))
     return {"amount": amount, "hour": np.clip(np.round(hour), 7, 23), "online": online}
+
+
+@lru_cache(maxsize=1)
+def _history() -> dict[str, np.ndarray]:
+    # fixed seed so the model and its scores repeat
+    return simulate_purchases(HISTORY_SIZE, seed=42)
 
 
 def _features(amount: np.ndarray, hour: np.ndarray, online: np.ndarray) -> np.ndarray:
