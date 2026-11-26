@@ -19,9 +19,9 @@ PER_PATTERN = 50
 PATTERNS = ("large amount", "night-time", "card testing", "large at night")
 
 
-def labelled_purchases(seed: int = 7) -> dict[str, np.ndarray]:
+def labelled_purchases(seed: int = 7, normal_count: int = NORMAL_COUNT) -> dict[str, np.ndarray]:
     """Normal purchases (label "normal") plus PER_PATTERN of each fraud pattern."""
-    normal = fraud.simulate_purchases(NORMAL_COUNT, seed)
+    normal = fraud.simulate_purchases(normal_count, seed)
     # fraud starts from normal purchases (own seed), then one or two features are pushed out
     base = fraud.simulate_purchases(len(PATTERNS) * PER_PATTERN, seed + 1)
     rng = np.random.default_rng(seed + 2)
@@ -41,7 +41,7 @@ def labelled_purchases(seed: int = 7) -> dict[str, np.ndarray]:
         "amount": np.concatenate([normal["amount"], amount]),
         "hour": np.concatenate([normal["hour"], hour]),
         "online": np.concatenate([normal["online"], online]),
-        "label": np.concatenate([np.full(NORMAL_COUNT, "normal"), pattern]),
+        "label": np.concatenate([np.full(normal_count, "normal"), pattern]),
     }
 
 

@@ -52,7 +52,27 @@ What it shows:
 - LOF catches 94% of the fraud while flagging about 1 in 100 good purchases, close to the 1% contamination it was set to.
 - On this set the z-score adds nothing on top of LOF, but it stays in the bank because it gives an analyst a plain reason ("amount far outside normal spending").
 
-Precision here is measured with 1 fraud in every 6 purchases. Real fraud is far rarer, so with the same 1.1% false-positive rate most alerts on real traffic would be false alarms. The threshold A/B test on the roadmap looks at that trade-off next.
+Precision here is measured with 1 fraud in every 6 purchases. Real fraud is far rarer, so with the same 1.1% false-positive rate most alerts on real traffic would be false alarms.
+
+### Threshold A/B test
+
+Lowering the alert threshold catches more fraud but flags more good customers. `bank/ab_test.py` measures that trade-off: the bank's current LOF threshold (A) and a more sensitive one (B) score the same new traffic, 5,000 normal purchases plus 50 of each fraud pattern. Because both variants see the same purchases, the difference is tested with an exact McNemar test, which compares only the purchases where A and B disagree. The last column scales the results to a realistic 1 fraud in 1,000 purchases.
+
+```bash
+python -m bank.ab_test
+```
+
+| Variant | Fraud caught | Good customers flagged | False alarms per fraud caught at 1 in 1,000 |
+| --- | --- | --- | --- |
+| A: current (LOF > 1.83) | 188 of 200 (94.0%) | 62 of 5,000 (1.24%) | 13.2 |
+| B: sensitive (LOF > 1.50) | 199 of 200 (99.5%) | 232 of 5,000 (4.64%) | 46.6 |
+
+McNemar exact test, A against B on the same purchases:
+
+- Fraud caught: 0 flagged only by A, 11 only by B, p = 0.00098
+- Good customers flagged: 0 flagged only by A, 170 only by B, p = 1.3e-51
+
+Both differences are significant. B catches 11 more frauds out of 200, but flags 170 more good customers, so each fraud caught would cost about 47 false alarms instead of 13. The bank keeps threshold A: at real fraud rates, most of B's extra alerts would land on good customers and take up analyst time.
 
 ## Running it
 
@@ -167,7 +187,8 @@ app.py, style.css        Streamlit app (card, merchants, bank in one process)
 web/                     Flask demo: pages, JSON API and per-visitor card and bank
 render.yaml              Render hosting setup
 bank/                    bank API: signing, authorization, fraud monitor, SQLite ledger, audit log,
-                         detector evaluation (python -m bank.evaluation)
+                         detector evaluation (python -m bank.evaluation),
+                         threshold A/B test (python -m bank.ab_test)
 queries/                 analytics SQL over the ledger
 mcp_server/              read-only MCP server for AI agents
 tests/                   attack and payment-flow tests
