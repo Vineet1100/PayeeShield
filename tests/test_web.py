@@ -288,3 +288,23 @@ def test_bank_page_shows_the_sql_reports(client):
     html = client.get("/bank").get_data(as_text=True)
     assert "approval_rate_by_channel.sql" in html and "50.0%" in html
     assert "Chip locked: fingerprint required" in html and "$10.00" in html
+
+
+def test_bank_page_charts_the_metrics(client):
+    client.post("/api/attack/testing", json={"hour": 12})
+    client.post("/api/scan", json={"finger": "owner"})
+    client.post("/api/tap", json={"amount": 10, "hour": 12})
+    html = client.get("/bank").get_data(as_text=True)
+    assert "approval_rate_by_minute.sql" in html
+    # the requests may straddle a minute boundary, so only the running rate is fixed
+    assert 'aria-label="Running approval rate 25.0% after' in html
+    assert "approved in this minute" in html and "<polyline" in html
+    # three locked taps fill the blocked bar and raise one high alert, no medium ones
+    assert '<i style="width:100.0%">' in html
+    assert 'class="high" style="width:100.0%"' in html and 'class="med" style="width:0.0%"' in html
+
+
+def test_bank_page_has_no_charts_before_the_first_payment(client):
+    html = client.get("/bank").get_data(as_text=True)
+    assert "The charts appear once the ledger has a payment in it." in html
+    assert "<svg" not in html

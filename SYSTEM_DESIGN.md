@@ -51,7 +51,7 @@ flowchart LR
 | Fraud monitor | `bank/fraud.py`, `Bank._monitor()` | Reads the ledger and writes alerts to it. |
 | Ledger | `bank/ledger.py`, `queries/` | Transactions and alerts, with tokenized card numbers only. Amounts in integer cents. |
 | MCP server | `mcp_server/server.py` | Read-only fraud credentials. Cannot move money. |
-| Live demo | `web/` | One in-memory SQLite ledger per visitor (same `Ledger` class and `queries/` reports), capped at 300 attempts and dropped after 2 idle hours. Stores a demo token, never the card number. |
+| Live demo | `web/` | One in-memory SQLite ledger per visitor (same `Ledger` class and `queries/` reports, charted on the bank page), capped at 300 attempts and dropped after 2 idle hours. Stores a demo token, never the card number. |
 
 ## Trust boundaries
 

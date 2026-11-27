@@ -64,6 +64,35 @@ def test_hourly_volume_counts_only_approved_spending(ledger):
     ]
 
 
+def test_approval_rate_by_minute_keeps_a_running_rate():
+    ledger = Ledger()
+    for t in (tx(at=600), tx(at=610), blocked(at=650), blocked(at=700), tx(at=800)):
+        ledger.add_transaction(t)
+    assert ledger.report("approval_rate_by_minute") == [
+        {
+            "minute": 600,
+            "attempts": 3,
+            "approved": 2,
+            "approval_rate_pct": 66.7,
+            "running_rate_pct": 66.7,
+        },
+        {
+            "minute": 660,
+            "attempts": 1,
+            "approved": 0,
+            "approval_rate_pct": 0.0,
+            "running_rate_pct": 50.0,
+        },
+        {
+            "minute": 780,
+            "attempts": 1,
+            "approved": 1,
+            "approval_rate_pct": 100.0,
+            "running_rate_pct": 60.0,
+        },
+    ]
+
+
 def test_stats_are_exact_to_the_cent(ledger):
     assert ledger.stats() == {
         "attempts": 5,

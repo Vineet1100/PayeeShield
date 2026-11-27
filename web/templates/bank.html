@@ -32,6 +32,57 @@
   </section>
 </div>
 {% set sql = "https://github.com/Vineet1100/biometric-card-fraud-analytics/blob/main/queries/" %}
+<section class="panel analytics" aria-label="Metrics">
+  <div class="panel-h"><h2>Metrics</h2><span>charts from the same ledger, as of page load</span></div>
+  {% if ledger %}
+  <div class="reports">
+    <div class="report">
+      <h3>Approval rate over time</h3>
+      <a class="mono" href="{{ sql }}approval_rate_by_minute.sql" target="_blank" rel="noopener">approval_rate_by_minute.sql</a>
+      {% set rate = reports.approval_rate_by_minute %}
+      {% set dx = 300 / ([rate | length - 1, 1] | max) %}
+      <svg class="chart" viewBox="-30 -8 340 140" role="img" aria-label="Running approval rate {{ rate[-1].running_rate_pct }}% after {{ rate | length }} minute{{ 's' if rate | length > 1 }} of payments">
+        {% for pct in (0, 50, 100) %}
+        <line class="grid" x1="0" x2="300" y1="{{ 120 - pct * 1.2 }}" y2="{{ 120 - pct * 1.2 }}"/>
+        <text x="-6" y="{{ 124 - pct * 1.2 }}">{{ pct }}%</text>
+        {% endfor %}
+        {# a single minute is drawn as a flat line across the chart #}
+        <polyline points="{% for r in rate %}{{ loop.index0 * dx }},{{ 120 - r.running_rate_pct * 1.2 }} {% endfor %}{% if rate | length == 1 %}300,{{ 120 - rate[0].running_rate_pct * 1.2 }}{% endif %}"/>
+        {% for r in rate %}
+        <circle cx="{{ loop.index0 * dx }}" cy="{{ 120 - r.approval_rate_pct * 1.2 }}" r="4"><title>{{ r.approved }} of {{ r.attempts }} approved in this minute ({{ r.approval_rate_pct }}%)</title></circle>
+        {% endfor %}
+      </svg>
+      <p class="legend"><span class="key line"></span>running rate <span class="key dot"></span>each minute
+        <span>from <time class="num" data-t="{{ rate[0].minute }}"></time>{% if rate | length > 1 %} to <time class="num" data-t="{{ rate[-1].minute }}"></time>{% endif %}</span></p>
+    </div>
+    <div class="report">
+      <h3>Blocked attempts by reason</h3>
+      <a class="mono" href="{{ sql }}blocked_by_reason.sql" target="_blank" rel="noopener">blocked_by_reason.sql</a>
+      {% set blocked = reports.blocked_by_reason %}
+      <ul class="bars">
+        {% for r in blocked %}
+        <li><span>{{ r.reason }} <small>{{ r.channel | replace('_', '-') | title }}</small></span><b class="num">{{ r.attempts }}</b><i style="width:{{ 100 * r.attempts / blocked[0].attempts }}%"></i></li>
+        {% else %}
+        <li class="empty">Nothing blocked yet.</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="report">
+      <h3>Alerts by severity</h3>
+      <span class="mono src">fraud monitor</span>
+      {% set high = alerts | selectattr('sev', 'eq', 'high') | list | length %}
+      {% set top = [high, alerts | length - high, 1] | max %}
+      <ul class="bars">
+        {% for label, sev, n in (('High', 'high', high), ('Medium', 'med', alerts | length - high)) %}
+        <li><span>{{ label }}</span><b class="num">{{ n }}</b><i class="{{ sev }}" style="width:{{ 100 * n / top }}%"></i></li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% else %}
+  <p class="empty">The charts appear once the ledger has a payment in it.</p>
+  {% endif %}
+</section>
 <section class="panel analytics" aria-label="Ledger analytics">
   <div class="panel-h"><h2>Ledger analytics</h2><span>SQL on your SQLite ledger, as of page load</span></div>
   {% if ledger %}

@@ -10,7 +10,7 @@ I wanted to see how a few ideas from card security fit together in one place: bi
 
 It runs on the free plan, so if nobody has visited for 15 minutes the first load takes about a minute while the server wakes up.
 
-The demo is a Flask app (`web/`) with a page for each mission (pay in store, pay online, attack the card, fraud AI), plus a home page that tracks your progress, a bank server page with the log and alerts, and a how-it-works page. Every rule runs in Python on the server: the fingerprint unlock window, the TOTP codes, the approvals, the attacks, the fraud monitor and the scikit-learn model. Each visitor gets their own card and bank, kept for 2 hours, with payments stored in their own in-memory SQLite ledger. The bank server page runs the analytics SQL from `queries/` on that ledger (approval rate by channel, blocked attempts by reason, volume by hour). The page itself only draws the card, runs the hold-to-scan animation and asks the server what happened. On a Mac it asks for your real fingerprint through Touch ID (using a passkey) and sends purchase approvals as a notification on your laptop. On devices without Touch ID the sensor is simulated.
+The demo is a Flask app (`web/`) with a page for each mission (pay in store, pay online, attack the card, fraud AI), plus a home page that tracks your progress, a bank server page with the log and alerts, and a how-it-works page. Every rule runs in Python on the server: the fingerprint unlock window, the TOTP codes, the approvals, the attacks, the fraud monitor and the scikit-learn model. Each visitor gets their own card and bank, kept for 2 hours, with payments stored in their own in-memory SQLite ledger. The bank server page runs the analytics SQL from `queries/` on that ledger (approval rate by channel and by minute, blocked attempts by reason, volume by hour) and charts the approval rate over time, blocked attempts by reason and fraud alerts by severity, drawn as server-rendered SVG and HTML so the strict Content Security Policy needs no chart script. The page itself only draws the card, runs the hold-to-scan animation and asks the server what happened. On a Mac it asks for your real fingerprint through Touch ID (using a passkey) and sends purchase approvals as a notification on your laptop. On devices without Touch ID the sensor is simulated.
 
 ## What it does
 
@@ -114,6 +114,7 @@ python -m bank                      # listens on 127.0.0.1:8080
 
 ```bash
 sqlite3 -header -column ledger.db < queries/approval_rate_by_channel.sql
+sqlite3 -header -column ledger.db < queries/approval_rate_by_minute.sql   # with a running rate (window function)
 sqlite3 -header -column ledger.db < queries/blocked_by_reason.sql
 sqlite3 -header -column ledger.db < queries/hourly_volume.sql
 ```

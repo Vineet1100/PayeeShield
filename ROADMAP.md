@@ -4,7 +4,6 @@ One improvement at a time, top of the list first. Finished items move to **Done*
 
 ## Up next
 
-- [ ] **Metrics page in the live demo.** Approval rate over time, blocked attempts by reason and alerts by severity, as charts on the bank page.
 - [ ] **Explain each alert.** Show which features (amount, hour, channel) pushed a purchase over the line, so an analyst can see why it was flagged.
 - [ ] **Impossible-travel rule.** Flag two in-store payments from merchants in different cities too close together in time to be real.
 - [ ] **Merchant risk check.** Score merchants by their decline and alert history and flag purchases from new or high-risk merchants.
@@ -18,6 +17,7 @@ One improvement at a time, top of the list first. Finished items move to **Done*
 
 ## Done
 
+- 2026-11-27: The live demo's bank page now charts the approval rate over time (a new per-minute SQL report with a running rate), blocked attempts by reason and alerts by severity.
 - 2026-11-26: Added a threshold A/B test that scores two fraud-alert thresholds on the same traffic and compares fraud caught and good customers flagged with an exact McNemar test.
 - 2026-11-25: Added a labelled test set that compares the robust z-score, Local Outlier Factor and Isolation Forest on precision, recall and false-positive rate, with the results table in the README.
 - 2026-11-24: The whole codebase now passes black and ruff, with shared settings in `pyproject.toml` and a lint job in CI.
